@@ -21,8 +21,10 @@ project(
         # DISCO-2 mission's CSP fabric.
         # buffer_size: bytes per CSP packet. 2048 lets a typical manifest
         #   (~2-4 KB once we drop modules.list lines) fit in 1-2 packets.
-        # use_rdp:     reliable datagram (retransmit + ordering) — required
-        #   so the ground side gets a complete manifest even on a lossy link.
+        # use_rdp:     left enabled (libcsp default) so a future minor can
+        #   wire RDP for real-radio retransmit without re-tuning the build.
+        #   v0.1.x's --remote uses plain CSP + a 4-byte length prefix; RDP
+        #   is compiled into libcsp but unused in our protocol path.
         # have_stdio:  enables csp_print() to actually print, which the
         #   sample CSP loopback harness uses for setup-time diagnostics.
         'csp:buffer_size=2048',
