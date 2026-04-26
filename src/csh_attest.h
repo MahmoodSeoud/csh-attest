@@ -8,6 +8,8 @@
  * adapters.
  */
 
+#include <stdio.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,6 +23,23 @@ extern "C" {
  * aborts the load).
  */
 int csh_attest_init(void);
+
+/*
+ * Driver for the `attest-diff` command. Decoupled from the slash callback
+ * so unit tests can exercise it without faking a `struct slash`.
+ *
+ * argv layout: argv[0] is the command name (ignored); positional args are
+ * <lhs.json> and <rhs.json>; flags are `--json` and `--no-color`.
+ *
+ * Returns the design-doc shell exit code (NOT a SLASH_E* value):
+ *   0 — parity (no drift)
+ *   1 — drift detected
+ *   2 — usage error, file load failure, or non-canonical JSON input
+ *
+ * The slash callback in csh_attest.c forwards this return value verbatim
+ * so `csh -c "attest-diff ..."` exits with the same code.
+ */
+int attest_diff_run(int argc, char **argv, FILE *out, FILE *err);
 
 #ifdef __cplusplus
 }

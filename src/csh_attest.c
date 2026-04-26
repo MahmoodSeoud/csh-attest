@@ -27,11 +27,171 @@
 #include "csh_attest.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "attest.h"
+#include "diff.h"
+#include "diff_render.h"
 #include "jcs.h"
+#include "jcs_parse.h"
 #include "sign.h"
+
+/*
+ * File loader for attest-diff. Reads `path` into a heap buffer; caller
+ * frees. 1 MB sanity cap is well above the design doc's 200 KB hard cap
+ * for an individual manifest, leaving headroom for an envelope that wraps
+ * one in a string field. Returns 0 on success, -1 on any I/O error.
+ */
+static int load_file(const char *path, uint8_t **out_bytes, size_t *out_len,
+                     FILE *err)
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        fprintf(err, "csh-attest: E001: cannot open: %s\n", path);
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        fprintf(err, "csh-attest: E001: seek failed: %s\n", path);
+        return -1;
+    }
+    long sz = ftell(f);
+    if (sz < 0) {
+        fclose(f);
+        fprintf(err, "csh-attest: E001: tell failed: %s\n", path);
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        fprintf(err, "csh-attest: E001: rewind failed: %s\n", path);
+        return -1;
+    }
+    if (sz > (long)(1024 * 1024)) {
+        fclose(f);
+        fprintf(err,
+                "csh-attest: E105: %s exceeds 1 MB sanity cap (%ld bytes)\n",
+                path, sz);
+        return -1;
+    }
+    if (sz == 0) {
+        fclose(f);
+        *out_bytes = NULL;
+        *out_len = 0;
+        return 0;
+    }
+    uint8_t *buf = malloc((size_t)sz);
+    if (buf == NULL) {
+        fclose(f);
+        fprintf(err, "csh-attest: E901: out of memory loading %s\n", path);
+        return -1;
+    }
+    size_t r = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    if (r != (size_t)sz) {
+        free(buf);
+        fprintf(err, "csh-attest: E001: short read: %s\n", path);
+        return -1;
+    }
+    *out_bytes = buf;
+    *out_len = (size_t)sz;
+    return 0;
+}
+
+int attest_diff_run(int argc, char **argv, FILE *out, FILE *err)
+{
+    bool json_mode = false;
+    bool no_color = false;
+    const char *lhs_path = NULL;
+    const char *rhs_path = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        if (strcmp(a, "--json") == 0) {
+            json_mode = true;
+        } else if (strcmp(a, "--no-color") == 0) {
+            no_color = true;
+        } else if (a[0] == '-') {
+            fprintf(err, "csh-attest: E901: unknown flag: %s\n", a);
+            return 2;
+        } else if (lhs_path == NULL) {
+            lhs_path = a;
+        } else if (rhs_path == NULL) {
+            rhs_path = a;
+        } else {
+            fprintf(err,
+                    "csh-attest: E901: unexpected positional argument: %s\n",
+                    a);
+            return 2;
+        }
+    }
+    if (lhs_path == NULL || rhs_path == NULL) {
+        fprintf(err,
+                "csh-attest: usage: "
+                "attest-diff [--json] [--no-color] <lhs.json> <rhs.json>\n");
+        return 2;
+    }
+
+    uint8_t *lhs_bytes = NULL;
+    uint8_t *rhs_bytes = NULL;
+    size_t lhs_len = 0;
+    size_t rhs_len = 0;
+    struct jcsp_value lhs_v;
+    struct jcsp_value rhs_v;
+    memset(&lhs_v, 0, sizeof(lhs_v));
+    memset(&rhs_v, 0, sizeof(rhs_v));
+    struct diff_result result;
+    memset(&result, 0, sizeof(result));
+    int rc = 2;
+
+    if (load_file(lhs_path, &lhs_bytes, &lhs_len, err) != 0) {
+        goto cleanup;
+    }
+    if (load_file(rhs_path, &rhs_bytes, &rhs_len, err) != 0) {
+        goto cleanup;
+    }
+
+    if (jcsp_parse(lhs_bytes, lhs_len, &lhs_v) != 0) {
+        fprintf(err, "csh-attest: E001: %s is not JCS-canonical JSON\n",
+                lhs_path);
+        goto cleanup;
+    }
+    if (jcsp_parse(rhs_bytes, rhs_len, &rhs_v) != 0) {
+        fprintf(err, "csh-attest: E001: %s is not JCS-canonical JSON\n",
+                rhs_path);
+        goto cleanup;
+    }
+    if (lhs_v.type != JCSP_OBJECT || rhs_v.type != JCSP_OBJECT) {
+        fprintf(err,
+                "csh-attest: E001: both inputs must be top-level objects\n");
+        goto cleanup;
+    }
+
+    if (attest_diff(&lhs_v, &rhs_v, &result) != 0) {
+        fprintf(err, "csh-attest: E001: diff failed\n");
+        goto cleanup;
+    }
+
+    diff_render_opts_t opts = {
+        .json_mode = json_mode,
+        .color = diff_should_color(json_mode, no_color, out),
+    };
+    if (diff_render(out, &result, &opts) != 0) {
+        fprintf(err, "csh-attest: E901: render failed\n");
+        goto cleanup;
+    }
+
+    rc = diff_has_drift(&result) ? 1 : 0;
+
+cleanup:
+    diff_result_free(&result);
+    jcsp_value_free(&lhs_v);
+    jcsp_value_free(&rhs_v);
+    free(lhs_bytes);
+    free(rhs_bytes);
+    return rc;
+}
 
 #ifdef CSH_ATTEST_HAVE_SLASH
 #include <slash.h>
@@ -43,6 +203,21 @@ static int hello_cmd(struct slash *slash)
     return SLASH_SUCCESS;
 }
 slash_command(hello, hello_cmd, "", "csh-attest scaffold liveness check");
+
+/*
+ * `attest-diff <lhs.json> <rhs.json> [--json] [--no-color]`. The function
+ * body is just a forwarder — attest_diff_run does the real work and is
+ * unit-tested directly. csh propagates this return value as the exit
+ * code in `csh -c "..."` mode, so the design-doc 0/1/2 contract is met.
+ */
+static int attest_diff_cmd(struct slash *slash)
+{
+    return attest_diff_run(slash->argc, slash->argv, stdout, stderr);
+}
+slash_command_named(attest_diff, "attest-diff", attest_diff_cmd,
+                    "[--json] [--no-color] <lhs.json> <rhs.json>",
+                    "Compare two attestation manifests; "
+                    "exit 0=parity 1=drift 2=error");
 
 /*
  * `attest --emit`: writes the canonical manifest for the running host to

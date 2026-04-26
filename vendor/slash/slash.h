@@ -104,6 +104,19 @@ __attribute__((weak)) extern int slash_list_add(struct slash_command *cmd);
         .args = _args, .help = _help, .next = {NULL}, .context = NULL,       \
     }
 
+/*
+ * Variant when the user-facing command name is not a valid C identifier
+ * (e.g., contains a hyphen). `_cident` is the C identifier used to name
+ * the storage; `_name_str` is the literal command name csh's parser will
+ * match against. Functionally equivalent to slash_command() otherwise.
+ */
+#define slash_command_named(_cident, _name_str, _func, _args, _help)         \
+    __attribute__((section("slash"), aligned(4), used))                      \
+    const struct slash_command slash_cmd_##_cident = {                       \
+        .name = (char *)(_name_str), .func = _func, .completer = NULL,       \
+        .args = _args, .help = _help, .next = {NULL}, .context = NULL,       \
+    }
+
 #ifdef __cplusplus
 }
 #endif
