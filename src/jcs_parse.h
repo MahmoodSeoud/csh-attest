@@ -5,16 +5,13 @@
  *
  * Hand-rolled recursive-descent. Accepts only the canonical-output subset
  * the emitter produces:
- *   - objects, strings, unsigned integers (≤ 2^53)
+ *   - objects, arrays, strings, unsigned integers (≤ 2^53)
  *   - no whitespace anywhere outside string values
  *   - object keys strictly increasing (UTF-8 byte order)
+ *   - array element order preserved verbatim (no sort, per RFC 8785)
  *   - escapes restricted to \" \\ \b \f \n \r \t and \u00XX for control
  *     bytes 0x00-0x1F not covered by the named shortcuts
  *   - decimal integers only — no leading zero, no sign, no exponent
- *
- * Arrays are intentionally out of scope: nothing the v1 schema currently
- * emits uses them. They land alongside the modules.list adapter (session 7)
- * with both a parser and a canonical-emitter array op pair.
  *
  * Anything outside the accepted subset (whitespace, bare floats, ꯍ for
  * non-control codepoints, etc.) is rejected with -1. That strictness is the
@@ -39,6 +36,7 @@ typedef enum {
     JCSP_STRING,
     JCSP_UINT,
     JCSP_OBJECT,
+    JCSP_ARRAY,
 } jcsp_type_t;
 
 /*
@@ -61,6 +59,10 @@ struct jcsp_value {
             struct jcsp_member *members;
             size_t n;
         } object;
+        struct {
+            struct jcsp_value *items;  /* malloc'd array of values */
+            size_t n;
+        } array;
     } u;
 };
 

@@ -232,6 +232,70 @@ static int parse_uint(cursor_t *c, uint64_t *out)
 
 static int parse_value(cursor_t *c, struct jcsp_value *out);
 
+static int parse_array(cursor_t *c, struct jcsp_value *out)
+{
+    /*
+     * Set type/zeroed payload immediately so any early-failure return
+     * leaves `out` walkable by jcsp_value_free.
+     */
+    out->type = JCSP_ARRAY;
+    out->u.array.items = NULL;
+    out->u.array.n = 0;
+    size_t cap = 0;
+
+    if (consume(c, '[') < 0) {
+        return -1;
+    }
+
+    /* Empty array short-circuit. */
+    uint8_t b;
+    if (peek(c, &b) < 0) {
+        return -1;
+    }
+    if (b == ']') {
+        c->p++;
+        return 0;
+    }
+
+    for (;;) {
+        if (out->u.array.n == cap) {
+            size_t new_cap = cap ? cap * 2 : 4;
+            struct jcsp_value *new_arr = realloc(
+                out->u.array.items, new_cap * sizeof(struct jcsp_value));
+            if (new_arr == NULL) {
+                return -1;
+            }
+            out->u.array.items = new_arr;
+            cap = new_cap;
+        }
+
+        struct jcsp_value *v = &out->u.array.items[out->u.array.n];
+        memset(v, 0, sizeof(*v));
+        v->type = JCSP_UINT;
+        v->u.uint = 0;
+
+        if (parse_value(c, v) < 0) {
+            /* Bump n so the freshly-failed slot gets walked by free(). */
+            out->u.array.n++;
+            return -1;
+        }
+        out->u.array.n++;
+
+        if (peek(c, &b) < 0) {
+            return -1;
+        }
+        if (b == ']') {
+            c->p++;
+            return 0;
+        }
+        if (b != ',') {
+            return -1;
+        }
+        c->p++;
+        /* No trailing comma allowed: next iteration must read a value. */
+    }
+}
+
 static int parse_object(cursor_t *c, struct jcsp_value *out)
 {
     /*
@@ -342,6 +406,9 @@ static int parse_value(cursor_t *c, struct jcsp_value *out)
     if (b == '{') {
         return parse_object(c, out);
     }
+    if (b == '[') {
+        return parse_array(c, out);
+    }
     if (b == '"') {
         char *bytes = NULL;
         size_t len = 0;
@@ -407,6 +474,12 @@ void jcsp_value_free(struct jcsp_value *v)
         }
         free(v->u.object.members);
         break;
+    case JCSP_ARRAY:
+        for (size_t i = 0; i < v->u.array.n; i++) {
+            jcsp_value_free(&v->u.array.items[i]);
+        }
+        free(v->u.array.items);
+        break;
     }
     /* Reset to a re-freeable state for safety against double-free. */
     v->type = JCSP_UINT;
@@ -442,6 +515,19 @@ static int emit_into(const struct jcsp_value *v, struct attest_emitter *em)
             }
         }
         return em->ops->object_close(em->ctx);
+    }
+    case JCSP_ARRAY: {
+        int rc = em->ops->array_open(em->ctx);
+        if (rc < 0) {
+            return rc;
+        }
+        for (size_t i = 0; i < v->u.array.n; i++) {
+            rc = emit_into(&v->u.array.items[i], em);
+            if (rc < 0) {
+                return rc;
+            }
+        }
+        return em->ops->array_close(em->ctx);
     }
     }
     return -1;
@@ -484,6 +570,17 @@ bool jcsp_value_equals(const struct jcsp_value *a, const struct jcsp_value *b)
                 return false;
             }
             if (!jcsp_value_equals(&am->value, &bm->value)) {
+                return false;
+            }
+        }
+        return true;
+    case JCSP_ARRAY:
+        if (a->u.array.n != b->u.array.n) {
+            return false;
+        }
+        for (size_t i = 0; i < a->u.array.n; i++) {
+            if (!jcsp_value_equals(&a->u.array.items[i],
+                                   &b->u.array.items[i])) {
                 return false;
             }
         }

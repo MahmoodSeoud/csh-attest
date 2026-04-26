@@ -14,13 +14,13 @@
  *   - Integer serialization for uint64 values within the 2^53 safe-integer
  *     range. Larger values fail the call (no v1 schema field exceeds 2^53).
  *   - Lowercase hex byte serialization (no separators, double-quoted).
+ *   - Arrays. Per RFC 8785 array element ORDER is significant (preserved
+ *     verbatim — no sorting); commas are inserted between elements via the
+ *     same per-scope tracking that the object path uses for keys.
  *   - No whitespace anywhere in the output.
  *
  * Out of scope here (deferred):
  *   - Floating point ToString — no v1 field is float.
- *   - Array open/close — no v1 adapter needs arrays yet.
- *   - Reference test vector compliance suite (cyberphone) — fits next
- *     session alongside libsodium signing as "crypto interop".
  *
  * Streaming design: keys + values flow straight to the output buffer. A
  * small per-scope state tracks "have we emitted the first key" (for comma
@@ -66,10 +66,12 @@ int jcs_buffer_append_nul(struct jcs_buffer *b);
  * `prev_key` holds the most recently emitted key in this scope; the next
  * key() call must compare strictly greater. Initial empty string is the
  * lexicographic predecessor of any non-empty key, so the first key in a new
- * object always passes.
+ * object always passes. `is_array` flips comma-insertion responsibility
+ * from key() (object scope) to the value ops (array scope) — see jcs.c.
  */
 struct jcs_scope {
     bool first;
+    bool is_array;
     char prev_key[128];
 };
 

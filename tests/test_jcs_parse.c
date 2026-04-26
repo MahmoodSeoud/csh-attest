@@ -142,6 +142,105 @@ static void test_round_trip_signed_envelope_shape(void **state)
 }
 
 /* ------------------------------------------------------------------ */
+/* Array round-trips.                                                 */
+/* ------------------------------------------------------------------ */
+
+static void test_round_trip_empty_array(void **state)
+{
+    (void)state;
+    /*
+     * Top-level value can be any JCS value, not just an object — feeding
+     * a bare array exercises the parser's value dispatch + emit path.
+     */
+    assert_round_trips("[]");
+}
+
+static void test_round_trip_array_of_strings(void **state)
+{
+    (void)state;
+    assert_round_trips("[\"a\",\"b\",\"c\"]");
+}
+
+static void test_round_trip_array_of_uints(void **state)
+{
+    (void)state;
+    /*
+     * Order is preserved verbatim — note 3 < 1 in numeric sort; canonical
+     * arrays do not sort, the original sequence stays intact.
+     */
+    assert_round_trips("[3,1,2]");
+}
+
+static void test_round_trip_array_of_objects(void **state)
+{
+    (void)state;
+    /* Shape modules.list will use: [{name, srcversion}, ...]. */
+    assert_round_trips(
+        "[{\"name\":\"ext4\",\"srcversion\":\"abcd1234\"},"
+        "{\"name\":\"vfat\",\"srcversion\":\"deadbeef\"}]");
+}
+
+static void test_round_trip_object_containing_array(void **state)
+{
+    (void)state;
+    assert_round_trips(
+        "{\"modules.list\":[\"ext4\",\"vfat\"],\"schema_version\":\"0.1.0\"}");
+}
+
+static void test_round_trip_nested_arrays(void **state)
+{
+    (void)state;
+    assert_round_trips("[[1,2],[3,4]]");
+}
+
+static void test_array_equality(void **state)
+{
+    (void)state;
+    struct jcsp_value a, b, c;
+    assert_int_equal(parse_str("[1,2,3]", &a), 0);
+    assert_int_equal(parse_str("[1,2,3]", &b), 0);
+    assert_int_equal(parse_str("[1,3,2]", &c), 0);
+    assert_true(jcsp_value_equals(&a, &b));
+    /* Order is significant — same elements, different order ≠ equal. */
+    assert_false(jcsp_value_equals(&a, &c));
+    jcsp_value_free(&a);
+    jcsp_value_free(&b);
+    jcsp_value_free(&c);
+}
+
+static void test_array_length_differs_not_equal(void **state)
+{
+    (void)state;
+    struct jcsp_value a, b;
+    assert_int_equal(parse_str("[1,2]", &a), 0);
+    assert_int_equal(parse_str("[1,2,3]", &b), 0);
+    assert_false(jcsp_value_equals(&a, &b));
+    jcsp_value_free(&a);
+    jcsp_value_free(&b);
+}
+
+static void test_reject_array_trailing_comma(void **state)
+{
+    (void)state;
+    assert_parse_fails("[1,2,]");
+}
+
+static void test_reject_array_unterminated(void **state)
+{
+    (void)state;
+    assert_parse_fails("[1,2");
+    assert_parse_fails("[");
+}
+
+static void test_reject_array_whitespace(void **state)
+{
+    (void)state;
+    assert_parse_fails("[1, 2]");
+    assert_parse_fails("[ 1,2]");
+    assert_parse_fails("[1,2 ]");
+}
+
+/* ------------------------------------------------------------------ */
 /* Canonical-input rejection cases.                                   */
 /* ------------------------------------------------------------------ */
 
@@ -354,6 +453,17 @@ int main(void)
         cmocka_unit_test(test_round_trip_utf8),
         cmocka_unit_test(test_round_trip_uints),
         cmocka_unit_test(test_round_trip_signed_envelope_shape),
+        cmocka_unit_test(test_round_trip_empty_array),
+        cmocka_unit_test(test_round_trip_array_of_strings),
+        cmocka_unit_test(test_round_trip_array_of_uints),
+        cmocka_unit_test(test_round_trip_array_of_objects),
+        cmocka_unit_test(test_round_trip_object_containing_array),
+        cmocka_unit_test(test_round_trip_nested_arrays),
+        cmocka_unit_test(test_array_equality),
+        cmocka_unit_test(test_array_length_differs_not_equal),
+        cmocka_unit_test(test_reject_array_trailing_comma),
+        cmocka_unit_test(test_reject_array_unterminated),
+        cmocka_unit_test(test_reject_array_whitespace),
         cmocka_unit_test(test_reject_whitespace_between_tokens),
         cmocka_unit_test(test_reject_unsorted_keys),
         cmocka_unit_test(test_reject_duplicate_keys),

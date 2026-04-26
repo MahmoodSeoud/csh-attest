@@ -1,6 +1,8 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <cmocka.h>
@@ -17,8 +19,12 @@
 typedef enum {
     OP_OBJECT_OPEN,
     OP_OBJECT_CLOSE,
+    OP_ARRAY_OPEN,
+    OP_ARRAY_CLOSE,
     OP_KEY,
     OP_VALUE_STRING,
+    OP_VALUE_UINT,
+    OP_VALUE_BYTES_HEX,
 } op_kind_t;
 
 typedef struct {
@@ -54,18 +60,49 @@ static int rec_object_open(void *ctx) {
 static int rec_object_close(void *ctx) {
     return recorder_record(ctx, OP_OBJECT_CLOSE, NULL);
 }
+static int rec_array_open(void *ctx) {
+    return recorder_record(ctx, OP_ARRAY_OPEN, NULL);
+}
+static int rec_array_close(void *ctx) {
+    return recorder_record(ctx, OP_ARRAY_CLOSE, NULL);
+}
 static int rec_key(void *ctx, const char *k) {
     return recorder_record(ctx, OP_KEY, k);
 }
 static int rec_value_string(void *ctx, const char *v) {
     return recorder_record(ctx, OP_VALUE_STRING, v);
 }
+static int rec_value_uint(void *ctx, uint64_t v) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)v);
+    return recorder_record(ctx, OP_VALUE_UINT, buf);
+}
+static int rec_value_bytes_hex(void *ctx, const uint8_t *bytes, size_t len) {
+    /*
+     * Render the bytes as lowercase hex into the record's arg buffer so
+     * tests can grep for them. arg buffer is 128 chars; cap at 60 bytes
+     * = 120 hex chars (well under).
+     */
+    char buf[128];
+    if (len > 60) len = 60;
+    static const char digits[] = "0123456789abcdef";
+    for (size_t i = 0; i < len; i++) {
+        buf[i * 2]     = digits[bytes[i] >> 4];
+        buf[i * 2 + 1] = digits[bytes[i] & 0x0F];
+    }
+    buf[len * 2] = '\0';
+    return recorder_record(ctx, OP_VALUE_BYTES_HEX, buf);
+}
 
 static const struct attest_emitter_ops recorder_ops = {
     .object_open = rec_object_open,
     .object_close = rec_object_close,
+    .array_open = rec_array_open,
+    .array_close = rec_array_close,
     .key = rec_key,
     .value_string = rec_value_string,
+    .value_uint = rec_value_uint,
+    .value_bytes_hex = rec_value_bytes_hex,
 };
 
 static void recorder_attach(struct attest_emitter *em, recorder_t *r)

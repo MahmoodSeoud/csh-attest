@@ -130,7 +130,7 @@ static int jcs_emit_string(struct jcs_buffer *out, const char *s)
 }
 
 /* ------------------------------------------------------------------ */
-/* Comma + sortedness pre-check.                                      */
+/* Comma + sortedness pre-check (object scope).                       */
 /*                                                                    */
 /* Called from key() to insert "," between pairs and assert that the  */
 /* arriving key is strictly greater than the previous one in this     */
@@ -144,6 +144,10 @@ static int jcs_pre_key(struct jcs_canonical_ctx *ctx, const char *key)
         return -1;
     }
     struct jcs_scope *s = &ctx->scopes[ctx->depth - 1];
+    if (s->is_array) {
+        /* Caller hit key() while in an array scope — protocol violation. */
+        return -1;
+    }
     if (!s->first) {
         int rc = jcs_buffer_append_byte(ctx->out, ',');
         if (rc < 0) {
@@ -173,6 +177,36 @@ static int jcs_pre_key(struct jcs_canonical_ctx *ctx, const char *key)
 }
 
 /* ------------------------------------------------------------------ */
+/* Comma insertion for array scope.                                   */
+/*                                                                    */
+/* Every value-emitting op (object_open, array_open, value_string,    */
+/* value_uint, value_bytes_hex) calls this BEFORE producing bytes.    */
+/* In object scope it's a no-op (jcs_pre_key handled the comma). In   */
+/* array scope it emits "," for every element after the first and     */
+/* flips the scope's `first` flag.                                    */
+/* ------------------------------------------------------------------ */
+
+static int jcs_pre_value(struct jcs_canonical_ctx *ctx)
+{
+    if (ctx->depth <= 0) {
+        /* Top-level value — no enclosing scope, no comma. */
+        return 0;
+    }
+    struct jcs_scope *s = &ctx->scopes[ctx->depth - 1];
+    if (!s->is_array) {
+        /* Object scope: comma already handled by jcs_pre_key. */
+        return 0;
+    }
+    if (!s->first) {
+        if (jcs_buffer_append_byte(ctx->out, ',') < 0) {
+            return -1;
+        }
+    }
+    s->first = false;
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Ops.                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -182,7 +216,13 @@ static int jcs_op_object_open(void *raw)
     if (ctx->depth >= JCS_MAX_DEPTH) {
         return -1;
     }
+    /* Object can be a value in an enclosing array — handle the comma. */
+    int rc = jcs_pre_value(ctx);
+    if (rc < 0) {
+        return rc;
+    }
     ctx->scopes[ctx->depth].first = true;
+    ctx->scopes[ctx->depth].is_array = false;
     ctx->scopes[ctx->depth].prev_key[0] = '\0';
     ctx->depth++;
     return jcs_buffer_append_byte(ctx->out, '{');
@@ -194,8 +234,42 @@ static int jcs_op_object_close(void *raw)
     if (ctx->depth <= 0) {
         return -1;
     }
+    if (ctx->scopes[ctx->depth - 1].is_array) {
+        /* Mismatched bracket — caller closing an array as if it were object. */
+        return -1;
+    }
     ctx->depth--;
     return jcs_buffer_append_byte(ctx->out, '}');
+}
+
+static int jcs_op_array_open(void *raw)
+{
+    struct jcs_canonical_ctx *ctx = raw;
+    if (ctx->depth >= JCS_MAX_DEPTH) {
+        return -1;
+    }
+    int rc = jcs_pre_value(ctx);
+    if (rc < 0) {
+        return rc;
+    }
+    ctx->scopes[ctx->depth].first = true;
+    ctx->scopes[ctx->depth].is_array = true;
+    ctx->scopes[ctx->depth].prev_key[0] = '\0';
+    ctx->depth++;
+    return jcs_buffer_append_byte(ctx->out, '[');
+}
+
+static int jcs_op_array_close(void *raw)
+{
+    struct jcs_canonical_ctx *ctx = raw;
+    if (ctx->depth <= 0) {
+        return -1;
+    }
+    if (!ctx->scopes[ctx->depth - 1].is_array) {
+        return -1;
+    }
+    ctx->depth--;
+    return jcs_buffer_append_byte(ctx->out, ']');
 }
 
 static int jcs_op_key(void *raw, const char *key)
@@ -215,6 +289,10 @@ static int jcs_op_key(void *raw, const char *key)
 static int jcs_op_value_string(void *raw, const char *value)
 {
     struct jcs_canonical_ctx *ctx = raw;
+    int rc = jcs_pre_value(ctx);
+    if (rc < 0) {
+        return rc;
+    }
     return jcs_emit_string(ctx->out, value);
 }
 
@@ -234,6 +312,10 @@ static int jcs_op_value_uint(void *raw, uint64_t value)
                 value);
         return -1;
     }
+    int rc = jcs_pre_value(ctx);
+    if (rc < 0) {
+        return rc;
+    }
     char buf[24];
     int n = snprintf(buf, sizeof(buf), "%" PRIu64, value);
     if (n < 0 || (size_t)n >= sizeof(buf)) {
@@ -246,7 +328,11 @@ static int jcs_op_value_bytes_hex(void *raw, const uint8_t *bytes, size_t len)
 {
     struct jcs_canonical_ctx *ctx = raw;
     static const char hex[] = "0123456789abcdef";
-    int rc = jcs_buffer_append_byte(ctx->out, '"');
+    int rc = jcs_pre_value(ctx);
+    if (rc < 0) {
+        return rc;
+    }
+    rc = jcs_buffer_append_byte(ctx->out, '"');
     if (rc < 0) {
         return rc;
     }
@@ -264,6 +350,8 @@ static int jcs_op_value_bytes_hex(void *raw, const uint8_t *bytes, size_t len)
 static const struct attest_emitter_ops jcs_canonical_ops = {
     .object_open = jcs_op_object_open,
     .object_close = jcs_op_object_close,
+    .array_open = jcs_op_array_open,
+    .array_close = jcs_op_array_close,
     .key = jcs_op_key,
     .value_string = jcs_op_value_string,
     .value_uint = jcs_op_value_uint,

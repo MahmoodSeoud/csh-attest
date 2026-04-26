@@ -45,6 +45,9 @@ endif
 csh_attest_sources = [
     'src/csh_attest.c',
     'src/attest.c',
+    'src/adapters/kernel_uname.c',
+    'src/adapters/modules_list.c',
+    'src/adapters/etc_merkle.c',
     'src/diff.c',
     'src/diff_render.c',
     'src/jcs.c',
@@ -58,7 +61,7 @@ csh_attest_sources = [
 # target (libsodium-dev / libsodium-dev / cmocka-dev all in apt + apk).
 sodium_dep = dependency('libsodium', required: true)
 
-csh_attest_inc = include_directories('src')
+csh_attest_inc = include_directories('src', 'src/adapters')
 
 # slash is vendored under vendor/slash. Upstream spaceinventor/slash's
 # library code uses Linux-only headers (PATH_MAX, DT_DIR) without including

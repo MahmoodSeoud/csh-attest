@@ -22,7 +22,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,12 +74,16 @@ extern const size_t attest_fields_count;
  * the canonical emitter, a JCS rule violation such as out-of-order key). The
  * walker propagates failures up to attest_emit's return value.
  *
- * `array_open` / `array_close` are intentionally absent from session 4 — no
- * adapter yet needs them. They land alongside the modules.list adapter.
+ * `array_open` / `array_close` are optional: the canonical emitter
+ * (jcs.c) implements them and uses scope-tracking to insert commas between
+ * elements; debug emitters may leave them NULL if no adapter routed through
+ * them emits arrays.
  */
 struct attest_emitter_ops {
     int (*object_open)(void *ctx);
     int (*object_close)(void *ctx);
+    int (*array_open)(void *ctx);
+    int (*array_close)(void *ctx);
     int (*key)(void *ctx, const char *key);
     int (*value_string)(void *ctx, const char *value);
     int (*value_uint)(void *ctx, uint64_t value);
@@ -97,13 +100,6 @@ struct attest_emitter {
 };
 
 /*
- * Initialize a non-canonical FILE* emitter. Writes JSON-shaped output. Will
- * be replaced in session 4 by a JCS-canonical emitter that hashes through
- * libsodium. Adapter code does not change when that happens.
- */
-void attest_emitter_init_file(struct attest_emitter *em, FILE *out);
-
-/*
  * Walk the field table, emitting the manifest envelope into `em`. Returns 0
  * on success or the first non-zero return from a required adapter (or from
  * the emitter itself).
@@ -111,15 +107,24 @@ void attest_emitter_init_file(struct attest_emitter *em, FILE *out);
 int attest_emit(struct attest_emitter *em);
 
 /*
- * kernel.uname adapter — captures the running kernel release string via the
- * uname() syscall. Linux-only in v1; on other systems the adapter returns
- * ENOSYS-equivalent (-1) and the walker propagates per the field's
- * `required` setting.
+ * Adapter prototypes. Implementations live in src/adapters/<name>.c per
+ * the design doc 2B "table-driven introspection" pattern. Exposed here
+ * (rather than per-adapter headers) so the field table in attest.c has
+ * one canonical place to look up callbacks AND so unit tests can call
+ * any adapter directly without going through the walker.
  *
- * Exposed in the header so tests can call it directly without going through
- * the full table walker.
+ * - kernel.uname: POSIX uname(). Works on Linux (production) + macOS
+ *   (compile-check dev target).
+ * - modules.list: Linux /proc/modules + /sys/module/<name>/srcversion.
+ *   On non-Linux dev builds it emits an empty array (deterministic
+ *   placeholder; macOS isn't a v1 target).
+ * - etc.merkle: SHA-256 root over an allowlist of /etc paths. Works on
+ *   any Unix; on macOS the allowlisted paths usually don't exist so
+ *   the result is the merkle of all-empty content (still deterministic).
  */
 int attest_adapter_kernel_uname(struct attest_emitter *em);
+int attest_adapter_modules_list(struct attest_emitter *em);
+int attest_adapter_etc_merkle(struct attest_emitter *em);
 
 #ifdef __cplusplus
 }

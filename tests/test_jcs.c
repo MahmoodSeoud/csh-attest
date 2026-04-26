@@ -290,6 +290,164 @@ static void test_bytes_hex(void **state)
     jcs_buffer_free(&buf);
 }
 
+/* ---------- Arrays ---------- */
+
+static void test_empty_array(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "[]");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_array_with_strings(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    /* [ "a", "b", "c" ] — order is preserved verbatim. */
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "a"), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "b"), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "c"), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "[\"a\",\"b\",\"c\"]");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_array_with_uints(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 0), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 42), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 9007199254740992ULL), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "[0,42,9007199254740992]");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_array_of_objects(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    /* [ {"k":"v1"}, {"k":"v2"} ] — modules.list shape. */
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->object_open(em.ctx), 0);
+    assert_int_equal(em.ops->key(em.ctx, "k"), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "v1"), 0);
+    assert_int_equal(em.ops->object_close(em.ctx), 0);
+    assert_int_equal(em.ops->object_open(em.ctx), 0);
+    assert_int_equal(em.ops->key(em.ctx, "k"), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "v2"), 0);
+    assert_int_equal(em.ops->object_close(em.ctx), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "[{\"k\":\"v1\"},{\"k\":\"v2\"}]");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_object_containing_array(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    /* { "modules": [ "ext4", "vfat" ] } */
+    assert_int_equal(em.ops->object_open(em.ctx), 0);
+    assert_int_equal(em.ops->key(em.ctx, "modules"), 0);
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "ext4"), 0);
+    assert_int_equal(em.ops->value_string(em.ctx, "vfat"), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_int_equal(em.ops->object_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "{\"modules\":[\"ext4\",\"vfat\"]}");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_nested_arrays(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    /* [[1,2],[3,4]] */
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 1), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 2), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 3), 0);
+    assert_int_equal(em.ops->value_uint(em.ctx, 4), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_int_equal(em.ops->array_close(em.ctx), 0);
+    assert_buffer_equals(&buf, "[[1,2],[3,4]]");
+
+    jcs_buffer_free(&buf);
+}
+
+static void test_mismatched_bracket_rejected(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+
+    /* Object-open then array-close → fails. */
+    canon(&em, &ctx, &buf);
+    assert_int_equal(em.ops->object_open(em.ctx), 0);
+    assert_int_not_equal(em.ops->array_close(em.ctx), 0);
+    jcs_buffer_free(&buf);
+
+    /* Array-open then object-close → fails. */
+    canon(&em, &ctx, &buf);
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_not_equal(em.ops->object_close(em.ctx), 0);
+    jcs_buffer_free(&buf);
+}
+
+static void test_key_in_array_scope_rejected(void **state)
+{
+    (void)state;
+    struct attest_emitter em;
+    struct jcs_canonical_ctx ctx;
+    struct jcs_buffer buf;
+    canon(&em, &ctx, &buf);
+
+    /* key() is meaningless inside an array — must reject. */
+    assert_int_equal(em.ops->array_open(em.ctx), 0);
+    assert_int_not_equal(em.ops->key(em.ctx, "k"), 0);
+
+    jcs_buffer_free(&buf);
+}
+
 /* ---------- Integration: attest_emit through canonical ---------- */
 
 /*
@@ -363,6 +521,14 @@ int main(void)
         cmocka_unit_test(test_uint_serialization),
         cmocka_unit_test(test_uint_above_safe_integer_rejected),
         cmocka_unit_test(test_bytes_hex),
+        cmocka_unit_test(test_empty_array),
+        cmocka_unit_test(test_array_with_strings),
+        cmocka_unit_test(test_array_with_uints),
+        cmocka_unit_test(test_array_of_objects),
+        cmocka_unit_test(test_object_containing_array),
+        cmocka_unit_test(test_nested_arrays),
+        cmocka_unit_test(test_mismatched_bracket_rejected),
+        cmocka_unit_test(test_key_in_array_scope_rejected),
         cmocka_unit_test(test_attest_emit_canonical_shape),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
