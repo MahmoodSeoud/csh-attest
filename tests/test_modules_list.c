@@ -46,12 +46,12 @@ static char *make_sysfs_root(const char *const *names,
     char *root = strdup(dir);
 
     for (size_t i = 0; i < n; i++) {
-        char modpath[256];
+        char modpath[1024];
         snprintf(modpath, sizeof(modpath), "%s/%s", root, names[i]);
         assert_int_equal(mkdir(modpath, 0700), 0);
 
         if (srcversions[i] != NULL) {
-            char filepath[256];
+            char filepath[1024];
             snprintf(filepath, sizeof(filepath), "%s/srcversion", modpath);
             FILE *f = fopen(filepath, "w");
             assert_non_null(f);
@@ -70,10 +70,10 @@ static void cleanup_sysfs_root(const char *root, const char *const *names,
                                size_t n)
 {
     for (size_t i = 0; i < n; i++) {
-        char filepath[256];
+        char filepath[1024];
         snprintf(filepath, sizeof(filepath), "%s/%s/srcversion", root, names[i]);
         unlink(filepath); /* may not exist — ignore */
-        char modpath[256];
+        char modpath[1024];
         snprintf(modpath, sizeof(modpath), "%s/%s", root, names[i]);
         rmdir(modpath);
     }

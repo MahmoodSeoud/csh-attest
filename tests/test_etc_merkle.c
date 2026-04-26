@@ -38,7 +38,7 @@ static char *make_tmpdir(void)
 
 static void write_file(const char *dir, const char *name, const char *content)
 {
-    char path[256];
+    char path[1024];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
     FILE *f = fopen(path, "w");
     assert_non_null(f);
@@ -50,7 +50,7 @@ static void write_file(const char *dir, const char *name, const char *content)
 
 static void unlink_file(const char *dir, const char *name)
 {
-    char path[256];
+    char path[1024];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
     unlink(path);
 }
@@ -89,7 +89,7 @@ static void test_deterministic_for_same_inputs(void **state)
     char *dir = make_tmpdir();
     write_file(dir, "a", "alpha");
     write_file(dir, "b", "beta");
-    char path_a[256], path_b[256];
+    char path_a[1024], path_b[1024];
     snprintf(path_a, sizeof(path_a), "%s/a", dir);
     snprintf(path_b, sizeof(path_b), "%s/b", dir);
 
@@ -112,7 +112,7 @@ static void test_input_order_does_not_matter(void **state)
     char *dir = make_tmpdir();
     write_file(dir, "a", "alpha");
     write_file(dir, "b", "beta");
-    char path_a[256], path_b[256];
+    char path_a[1024], path_b[1024];
     snprintf(path_a, sizeof(path_a), "%s/a", dir);
     snprintf(path_b, sizeof(path_b), "%s/b", dir);
 
@@ -142,7 +142,7 @@ static void test_different_content_produces_different_root(void **state)
 {
     (void)state;
     char *dir = make_tmpdir();
-    char path_a[256];
+    char path_a[1024];
     snprintf(path_a, sizeof(path_a), "%s/a", dir);
     const char *paths[] = {path_a};
 
@@ -167,7 +167,7 @@ static void test_missing_file_treated_as_empty(void **state)
     (void)state;
     char *dir = make_tmpdir();
 
-    char path_present[256], path_missing[256];
+    char path_present[1024], path_missing[1024];
     snprintf(path_present, sizeof(path_present), "%s/present", dir);
     snprintf(path_missing, sizeof(path_missing), "%s/missing", dir);
     write_file(dir, "present", "alpha");
@@ -175,7 +175,7 @@ static void test_missing_file_treated_as_empty(void **state)
 
     /* Also create an empty "missing" file in a different dir to compare. */
     char *dir2 = make_tmpdir();
-    char path_empty[256];
+    char path_empty[1024];
     snprintf(path_empty, sizeof(path_empty), "%s/missing", dir2);
     write_file(dir2, "missing", "");
 
@@ -219,7 +219,7 @@ static void test_path_string_is_part_of_hash(void **state)
     write_file(dir1, "f", "same content");
     write_file(dir2, "f", "same content");
 
-    char p1[256], p2[256];
+    char p1[1024], p2[1024];
     snprintf(p1, sizeof(p1), "%s/f", dir1);
     snprintf(p2, sizeof(p2), "%s/f", dir2);
 
@@ -260,7 +260,7 @@ static void test_known_value_single_file(void **state)
      */
     char *dir = make_tmpdir();
     write_file(dir, "f", "abc");
-    char path[256];
+    char path[1024];
     snprintf(path, sizeof(path), "%s/f", dir);
     const char *paths[] = {path};
 
