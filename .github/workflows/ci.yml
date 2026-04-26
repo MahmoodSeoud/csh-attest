@@ -50,8 +50,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential meson ninja-build pkg-config \
+            build-essential ninja-build pkg-config python3-pip \
             libcmocka-dev libsodium-dev
+          # Ubuntu 22.04's apt meson is 0.61.x; `diff_files` for wrap-git
+          # subprojects requires meson 0.62+. Install via pip so the
+          # apm_csh wrap patch (subprojects/packagefiles/) actually
+          # applies. Alpine 3.19's apk meson is 1.3.x and supports it
+          # natively.
+          pip3 install --user 'meson>=1.0'
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: install build deps (alpine)
         if: ${{ matrix.container != '' }}

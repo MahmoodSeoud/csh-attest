@@ -91,9 +91,17 @@ csh_attest_sources = [
 # on Linux. macOS dev builds skip them — libcsp's POSIX driver doesn't
 # compile under darwin clang -Werror. The corresponding code in
 # csh_attest.c is gated on `#ifdef __linux__`.
+#
+# apm_link_stubs.c provides a weak no-op `vmem_add` so the .so links under
+# `-Wl,--no-undefined` (meson's default for shared_library on Linux).
+# libapm_csh::libmain references vmem_add unconditionally; the runtime
+# guard short-circuits because we have no vmem section, but the linker
+# can't see that. Production csh provides the real symbol; our weak stub
+# is never called.
 csh_attest_csp_sources = [
     'src/csp_server.c',
     'src/csp_client.c',
+    'src/apm_link_stubs.c',
 ]
 
 # libsodium provides crypto_sign_detached (Ed25519) and crypto_hash_sha256
