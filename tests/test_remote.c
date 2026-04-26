@@ -36,12 +36,15 @@
 #include "jcs_parse.h"
 
 /*
- * Test bird's CSP node id. Arbitrary — picked away from 0 (CSP "broadcast"
- * connotation) and 255 (the example default) to keep this test self-
- * contained. The client connects to this address; loopback routes back
- * to the listener bound to port 100 in this same process.
+ * Test bird's CSP node id. Must equal csp_if_lo.addr (default 0) for the
+ * single-process loopback round-trip to work: csp_send_direct's loopback
+ * shortcut at csp_io.c:134 requires `idout->dst == csp_if_lo.addr` and
+ * BYPASSES the per-packet src-address fill, so a non-zero csp_if_lo.addr
+ * leaves client packets with src=0; the server's reply then targets dst=0
+ * and misses the shortcut, dropping silently. Sticking to addr=0 matches
+ * libcsp's csp_server_client.c example and avoids the trap entirely.
  */
-#define TEST_NODE_ID 5u
+#define TEST_NODE_ID 0u
 
 /* ------------------------------------------------------------------ */
 /* One-time CSP setup.                                                */
@@ -69,11 +72,8 @@ static int suite_setup(void **state)
     (void)state;
 
     csp_init();
-    /* Set the loopback address AFTER csp_init — csp_init only sets the
-     * netmask. Without a non-zero addr the client's connect would race
-     * with the loopback shortcut path that compares idout->dst to
-     * csp_if_lo.addr. Setting it explicitly removes the ambiguity. */
-    csp_if_lo.addr = TEST_NODE_ID;
+    /* csp_if_lo.addr keeps its zero-init default. See TEST_NODE_ID
+     * comment for why we don't change it. */
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
