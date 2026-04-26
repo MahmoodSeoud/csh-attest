@@ -85,18 +85,11 @@ static int send_manifest_chunked(csp_conn_t *conn,
     return 0;
 }
 
-/*
- * Walk the introspection field table into a fresh canonical buffer, send
- * the result, free the buffer. Errors are logged via csp_print and the
- * connection is closed by the caller — there is no protocol-level error
- * frame yet (operator sees a short read on the ground side, returns
- * exit 3 / E101).
- */
 static void handle_one_request(csp_conn_t *conn)
 {
-    /* Drain the trigger packet if present. We don't validate its content;
-     * receiving any packet is the activation signal. */
     csp_packet_t *trigger = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
+    fprintf(stderr,
+            "csh-attest: server got trigger=%p\n", (void *)trigger);
     if (trigger != NULL) {
         csp_buffer_free(trigger);
     }
@@ -109,13 +102,20 @@ static void handle_one_request(csp_conn_t *conn)
 
     int rc = attest_emit(&em);
     if (rc != 0) {
-        csp_print("csh-attest: emit failed in CSP server (rc=%d)\n", rc);
+        fprintf(stderr,
+                "csh-attest: emit failed in CSP server (rc=%d)\n", rc);
         jcs_buffer_free(&buf);
         return;
     }
+    fprintf(stderr,
+            "csh-attest: server emit OK, %zu bytes; sending\n", buf.len);
 
     if (send_manifest_chunked(conn, buf.data, buf.len) != 0) {
-        csp_print("csh-attest: out of CSP buffers in server\n");
+        fprintf(stderr,
+                "csh-attest: out of CSP buffers in server\n");
+    } else {
+        fprintf(stderr,
+                "csh-attest: server send_manifest_chunked returned OK\n");
     }
 
     jcs_buffer_free(&buf);

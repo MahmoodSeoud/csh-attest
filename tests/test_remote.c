@@ -50,8 +50,16 @@
 static void *router_thread(void *unused)
 {
     (void)unused;
+    fprintf(stderr, "test_remote: router thread started\n");
+    /* Print first few packets routed so CI logs reveal whether the
+     * router is processing the trigger and the response. */
+    int routed = 0;
     while (1) {
-        csp_route_work();
+        int rc = csp_route_work();
+        if (rc == CSP_ERR_NONE && routed < 8) {
+            fprintf(stderr, "test_remote: router processed packet %d\n",
+                    ++routed);
+        }
     }
     return NULL;
 }
