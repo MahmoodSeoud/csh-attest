@@ -32,7 +32,14 @@ typedef struct {
     char arg[128];
 } op_record_t;
 
-#define MAX_OPS 128
+/*
+ * Big enough for a real Linux /proc/modules walk: ~200 kmods × 6 ops/kmod
+ * (object_open, key×2, value×2, object_close) plus the rest of the field
+ * table's ops. macOS has zero kmods so this is overkill there, but the
+ * recorder is small (~128 bytes per slot) — 4 KB · 128 = 512 KB of
+ * fixture state is fine for cmocka.
+ */
+#define MAX_OPS 4096
 
 typedef struct {
     op_record_t ops[MAX_OPS];
