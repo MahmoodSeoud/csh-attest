@@ -83,12 +83,14 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
         return 2;
     }
 
-    csp_conn_t *conn = csp_connect(CSP_PRIO_NORM, node, ATTEST_CSP_PORT,
-                                   ATTEST_CSP_TIMEOUT_MS, CSP_O_NONE);
+    unsigned port = attest_csp_port();
+    unsigned timeout_ms = attest_csp_timeout_ms();
+    csp_conn_t *conn = csp_connect(CSP_PRIO_NORM, node, port,
+                                   timeout_ms, CSP_O_NONE);
     if (conn == NULL) {
         fprintf(err,
                 "csh-attest: E101: connect to node %u port %u failed\n",
-                node, ATTEST_CSP_PORT);
+                node, port);
         return 3;
     }
 
@@ -109,7 +111,7 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
      * packet of exactly ATTEST_CSP_LEN_PREFIX bytes — it does not share
      * a packet with manifest data.
      */
-    csp_packet_t *header = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
+    csp_packet_t *header = csp_read(conn, timeout_ms);
     if (header == NULL) {
         fprintf(err,
                 "csh-attest: E102: timed out waiting for length header from "
@@ -136,7 +138,7 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
     size_t len = 0, cap = 0;
     int rc = 0;
     while (len < expected) {
-        csp_packet_t *p = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
+        csp_packet_t *p = csp_read(conn, timeout_ms);
         if (p == NULL) {
             fprintf(err,
                     "csh-attest: E102: short read from node %u "

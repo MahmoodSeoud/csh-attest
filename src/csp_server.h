@@ -5,9 +5,10 @@
  *
  * After csh has called csp_init() + brought up the router, our APM's
  * apm_init() invokes attest_csp_server_start(). That spawns a detached
- * pthread that binds ATTEST_CSP_PORT and answers every incoming connection
- * by emitting the canonical attestation manifest into the connection's
- * RDP stream and closing.
+ * pthread that binds attest_csp_port() (default 100, env-overridable
+ * via ATTEST_CSP_PORT — see csp_protocol.h) and answers every incoming
+ * connection by emitting the canonical attestation manifest into the
+ * connection's RDP stream and closing.
  *
  * The thread runs for the lifetime of the csh process. There is no stop
  * function — APMs do not unload at runtime; csh exit() unwinds atexit().

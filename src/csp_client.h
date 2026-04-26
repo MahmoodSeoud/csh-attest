@@ -3,10 +3,12 @@
 /*
  * Ground-side driver for `attest --remote <node>`.
  *
- * Connects to <node>:ATTEST_CSP_PORT via RDP, sends the trigger packet,
+ * Connects to <node>:attest_csp_port() (default 100, env-overridable
+ * via ATTEST_CSP_PORT — see csp_protocol.h), sends the trigger packet,
  * accumulates the bird's response stream until the connection closes,
  * writes the canonical-manifest bytes (followed by a single newline,
- * matching --emit's stdout shape) to `out`.
+ * matching --emit's stdout shape) to `out`. Read timeouts honour
+ * ATTEST_CSP_TIMEOUT_MS (default 5000ms).
  *
  * Pre-condition: csp_init() + the router have been brought up by the host
  * (in production: csh; in tests: the integration harness). We never call
