@@ -1,0 +1,19 @@
+diff --git a/src/apm.c b/src/apm.c
+--- a/src/apm.c
++++ b/src/apm.c
+@@ -6,6 +6,15 @@
+ #include "apm_csh.h"
+ #include <apm/csh_api.h>
+ #include <apm/apm.h>
++/* csh-attest patch: apm.c uses vmem_t / vmem_add in libmain unconditionally
++ * (the runtime &__start_vmem != &__stop_vmem guard handles the empty-
++ * section case), but the upstream <vmem/vmem.h> include lives inside the
++ * APM_HAVE_PARAM gate below. Without libparam linked we get
++ * -Werror=implicit-function-declaration. Gated so the real header still
++ * wins when APM_HAVE_PARAM is set. */
++#ifndef APM_HAVE_PARAM
++#include <vmem/vmem.h>
++#endif
+
+ #ifdef APM_HAVE_PARAM
+ #include <param/param.h>
