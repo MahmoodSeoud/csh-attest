@@ -127,28 +127,34 @@ static void *server_thread(void *unused)
 
     csp_socket_t sock = {0};
     if (csp_bind(&sock, ATTEST_CSP_PORT) != 0) {
-        csp_print("csh-attest: csp_bind(%u) failed; server thread exiting\n",
-                  ATTEST_CSP_PORT);
+        fprintf(stderr,
+                "csh-attest: csp_bind(%u) failed; server thread exiting\n",
+                ATTEST_CSP_PORT);
         return NULL;
     }
-    /* Backlog of 4 — operator-driven request rate, not high-rate
-     * automation. A larger backlog only helps if accepts queue up faster
-     * than the introspection walk completes (~10 ms typical). */
     if (csp_listen(&sock, 4) != 0) {
-        csp_print("csh-attest: csp_listen failed; server thread exiting\n");
+        fprintf(stderr,
+                "csh-attest: csp_listen failed; server thread exiting\n");
         return NULL;
     }
+    fprintf(stderr,
+            "csh-attest: listener ready on port %u\n", ATTEST_CSP_PORT);
 
     while (1) {
         /*
-         * CSP_MAX_TIMEOUT blocks indefinitely. The thread runs forever in
-         * production and is leaked on test exit; that's acceptable since
-         * APMs do not unload (see csp_server.h).
+         * Use a finite timeout (1 s) instead of CSP_MAX_TIMEOUT so a
+         * misbehaving accept loop can be diagnosed by the absence of
+         * "accepted" lines in the log. The thread runs forever in
+         * production; the timeout just means the while-loop spins
+         * cheaply between accepts. APMs do not unload — see csp_server.h.
          */
-        csp_conn_t *conn = csp_accept(&sock, CSP_MAX_TIMEOUT);
+        csp_conn_t *conn = csp_accept(&sock, 1000);
         if (conn == NULL) {
             continue;
         }
+        fprintf(stderr,
+                "csh-attest: accepted connection on port %u\n",
+                ATTEST_CSP_PORT);
         handle_one_request(conn);
         csp_close(conn);
     }
