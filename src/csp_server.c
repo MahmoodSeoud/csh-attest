@@ -85,11 +85,15 @@ static int send_manifest_chunked(csp_conn_t *conn,
     return 0;
 }
 
+/*
+ * Drain the trigger packet (its content is unused — the connection itself
+ * is the activation signal), walk the introspection field table into a
+ * fresh canonical buffer, send the result back as a length-prefixed
+ * chunked stream, free the buffer.
+ */
 static void handle_one_request(csp_conn_t *conn)
 {
     csp_packet_t *trigger = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
-    fprintf(stderr,
-            "csh-attest: server got trigger=%p\n", (void *)trigger);
     if (trigger != NULL) {
         csp_buffer_free(trigger);
     }
@@ -107,15 +111,10 @@ static void handle_one_request(csp_conn_t *conn)
         jcs_buffer_free(&buf);
         return;
     }
-    fprintf(stderr,
-            "csh-attest: server emit OK, %zu bytes; sending\n", buf.len);
 
     if (send_manifest_chunked(conn, buf.data, buf.len) != 0) {
         fprintf(stderr,
                 "csh-attest: out of CSP buffers in server\n");
-    } else {
-        fprintf(stderr,
-                "csh-attest: server send_manifest_chunked returned OK\n");
     }
 
     jcs_buffer_free(&buf);
@@ -132,29 +131,25 @@ static void *server_thread(void *unused)
                 ATTEST_CSP_PORT);
         return NULL;
     }
+    /* Backlog of 4 — operator-driven request rate, not high-rate
+     * automation. A larger backlog only helps if accepts queue up faster
+     * than the introspection walk completes (~10 ms typical). */
     if (csp_listen(&sock, 4) != 0) {
         fprintf(stderr,
                 "csh-attest: csp_listen failed; server thread exiting\n");
         return NULL;
     }
-    fprintf(stderr,
-            "csh-attest: listener ready on port %u\n", ATTEST_CSP_PORT);
 
     while (1) {
         /*
-         * Use a finite timeout (1 s) instead of CSP_MAX_TIMEOUT so a
-         * misbehaving accept loop can be diagnosed by the absence of
-         * "accepted" lines in the log. The thread runs forever in
-         * production; the timeout just means the while-loop spins
-         * cheaply between accepts. APMs do not unload — see csp_server.h.
+         * CSP_MAX_TIMEOUT blocks indefinitely. The thread runs forever
+         * in production and is leaked on test exit; that's acceptable
+         * since APMs do not unload (see csp_server.h).
          */
-        csp_conn_t *conn = csp_accept(&sock, 1000);
+        csp_conn_t *conn = csp_accept(&sock, CSP_MAX_TIMEOUT);
         if (conn == NULL) {
             continue;
         }
-        fprintf(stderr,
-                "csh-attest: accepted connection on port %u\n",
-                ATTEST_CSP_PORT);
         handle_one_request(conn);
         csp_close(conn);
     }
