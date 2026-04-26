@@ -11,6 +11,10 @@
  * Round-trip parser tests live in test_jcs_parse.c.
  */
 
+/* Linux glibc/musl gate open_memstream(), mkstemp(), and write() in unistd
+ * behind feature-test macros. macOS exposes them unconditionally. */
+#define _GNU_SOURCE
+
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>

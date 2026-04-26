@@ -1,6 +1,12 @@
 /*
  * attest-diff output rendering — text (ANSI-optional) and JSON (canonical).
+ *
+ * Linux glibc/musl gate fileno() (in stdio.h) and isatty() (in unistd.h)
+ * behind feature-test macros. macOS exposes both unconditionally.
+ * _GNU_SOURCE pulls them in via the same lever sign.c uses for O_CLOEXEC.
  */
+
+#define _GNU_SOURCE
 
 #include "diff_render.h"
 
