@@ -50,12 +50,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential meson ninja-build pkg-config libcmocka-dev
+            build-essential meson ninja-build pkg-config \
+            libcmocka-dev libsodium-dev
 
       - name: install build deps (alpine)
         if: ${{ matrix.container != '' }}
         run: |
-          apk add --no-cache build-base meson ninja pkgconfig cmocka-dev
+          apk add --no-cache build-base meson ninja pkgconfig \
+            cmocka-dev libsodium-dev
 
       - name: meson setup
         run: meson setup build

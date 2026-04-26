@@ -16,7 +16,7 @@ int libmain(void);
 int apm_init(void);
 
 #ifdef CSH_ATTEST_HAVE_SLASH
-#include <slash/slash.h>
+#include <slash.h>
 
 /*
  * Provide a stub for the slash_list_add symbol that csh_attest.c references

@@ -4,8 +4,9 @@ test_init = executable(
     '../src/csh_attest.c',
     '../src/attest.c',
     '../src/jcs.c',
-    include_directories: csh_attest_inc,
-    dependencies: [cmocka_dep, slash_dep],
+    '../src/sign.c',
+    include_directories: [csh_attest_inc, slash_inc],
+    dependencies: [cmocka_dep, sodium_dep],
     install: false,
 )
 
@@ -33,3 +34,14 @@ test_jcs = executable(
 )
 
 test('jcs', test_jcs)
+
+test_sign = executable(
+    'test_sign',
+    'test_sign.c',
+    '../src/sign.c',
+    include_directories: csh_attest_inc,
+    dependencies: [cmocka_dep, sodium_dep],
+    install: false,
+)
+
+test('sign', test_sign)

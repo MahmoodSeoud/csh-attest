@@ -58,6 +58,18 @@ static int jcs_buffer_append_str(struct jcs_buffer *b, const char *s)
     return jcs_buffer_append(b, (const uint8_t *)s, strlen(s));
 }
 
+int jcs_buffer_append_nul(struct jcs_buffer *b)
+{
+    uint8_t z = 0;
+    int rc = jcs_buffer_append(b, &z, 1);
+    if (rc < 0) {
+        return rc;
+    }
+    /* Don't count the NUL — len reflects content, .data is now C-string. */
+    b->len -= 1;
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* String escape per RFC 8785 §3.2.2.2.                               */
 /*                                                                    */

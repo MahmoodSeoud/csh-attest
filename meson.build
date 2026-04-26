@@ -46,28 +46,27 @@ csh_attest_sources = [
     'src/csh_attest.c',
     'src/attest.c',
     'src/jcs.c',
+    'src/sign.c',
 ]
+
+# libsodium provides crypto_sign_detached (Ed25519) and crypto_hash_sha256
+# with auto-detected ARMv8 Crypto Extensions (~10× speedup on Cortex-A53/A55,
+# per design doc 4A). Available as a system package on every Linux distro we
+# target (libsodium-dev / libsodium-dev / cmocka-dev all in apt + apk).
+sodium_dep = dependency('libsodium', required: true)
 
 csh_attest_inc = include_directories('src')
 
-# slash is consumed as headers only — slash_command(...) emits a `struct
-# slash_command` into the `slash` linker section, and our hand-rolled libmain
-# walks that section calling csh's slash_list_add() (resolved at dlopen time).
-#
-# This is a session-2 stand-in for upstream libapm_csh's libmain. apm_csh
-# transitively depends on libparam + libcsp (vmem.h is referenced
-# unconditionally in apm_csh.c outside #ifdef APM_HAVE_PARAM), wiring which is
-# deferred to a later session. The section-walk loop is ~10 lines and gets
-# deleted when apm_csh lands.
+# slash is vendored under vendor/slash. Upstream spaceinventor/slash's
+# library code uses Linux-only headers (PATH_MAX, DT_DIR) without including
+# them, so it fails to build under -Werror on Ubuntu. We never need that
+# code at runtime — only the struct shape + macro for the ELF section emit.
+# slash_list_add and friends resolve at dlopen time against csh's loaded
+# slash. See vendor/slash/slash.h for the full rationale.
+slash_inc = include_directories('vendor/slash')
+slash_dep = declare_dependency(include_directories: slash_inc)
 if is_linux
-    slash_dep = dependency(
-        'slash',
-        fallback: ['slash', 'slash_dep'],
-        default_options: ['warning_level=0', 'werror=false', 'builtins=false'],
-    ).partial_dependency(links: false, includes: true)
     add_project_arguments('-DCSH_ATTEST_HAVE_SLASH=1', language: 'c')
-else
-    slash_dep = declare_dependency()
 endif
 
 # csh discovers APMs by `libcsh_*` prefix + `.so` suffix (see
@@ -77,7 +76,7 @@ csh_attest_lib = shared_library(
     'csh_attest',
     csh_attest_sources,
     include_directories: csh_attest_inc,
-    dependencies: [slash_dep],
+    dependencies: [slash_dep, sodium_dep],
     install: true,
     install_dir: get_option('libdir') / 'csh',
 )

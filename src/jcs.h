@@ -50,6 +50,14 @@ struct jcs_buffer {
 void jcs_buffer_init(struct jcs_buffer *b);
 void jcs_buffer_free(struct jcs_buffer *b);
 
+/*
+ * Append a single NUL byte without bumping `len` — turns the buffer into a
+ * NUL-terminated C string usable with value_string. Returns 0 on success
+ * or -1 on allocation failure. Safe because canonical JSON never contains
+ * NULs, so callers can rely on .data being a valid C string after this.
+ */
+int jcs_buffer_append_nul(struct jcs_buffer *b);
+
 /* Maximum object nesting depth. Conservative; the v1 schema is <= 2 deep. */
 #define JCS_MAX_DEPTH 8
 
