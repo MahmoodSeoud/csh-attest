@@ -51,7 +51,9 @@ static char *make_sysfs_root(const char *const *names,
         assert_int_equal(mkdir(modpath, 0700), 0);
 
         if (srcversions[i] != NULL) {
-            char filepath[1024];
+            /* GCC -Wformat-truncation analysis: filepath must exceed
+             * sizeof(modpath) + len("/srcversion") + 1.  2048 covers it. */
+            char filepath[2048];
             snprintf(filepath, sizeof(filepath), "%s/srcversion", modpath);
             FILE *f = fopen(filepath, "w");
             assert_non_null(f);
