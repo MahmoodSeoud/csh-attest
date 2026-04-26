@@ -29,6 +29,14 @@ project(
         'csp:buffer_count=15',
         'csp:use_rdp=true',
         'csp:have_stdio=true',
+        # port_max_bind is the highest CSP port number that can be bound.
+        # libcsp's default of 16 leaves room for the standard service ports
+        # (0-7 reserved for ping/ps/memfree/etc, 8 for CMP) but rejects our
+        # ATTEST_CSP_PORT=100 (per design doc 1H). Bumping to 128 puts our
+        # port well clear of the standard range while staying inside an
+        # 8-bit address space. Memory cost: (128+2) * sizeof(csp_port_t) =
+        # ~2 KB of static storage in libcsp.
+        'csp:port_max_bind=128',
     ],
 )
 
