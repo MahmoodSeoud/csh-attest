@@ -40,16 +40,33 @@
 static atomic_int server_started;
 
 /*
- * Send a canonical-manifest buffer over the connection in
- * ATTEST_CSP_MAX_PAYLOAD-sized chunks. Returns 0 on success, -1 if any
- * csp_buffer_get fails (out of buffers — operator should bump
- * csp:buffer_count). csp_send transfers ownership of the packet, so the
- * caller never frees on the success path; the failure path frees the
+ * Send a 4-byte big-endian length header followed by the manifest body in
+ * ATTEST_CSP_MAX_PAYLOAD-sized chunks. Length prefix lets the ground side
+ * stop reading after `len` bytes without depending on connection-close
+ * detection (which is unreliable without RDP).
+ *
+ * Returns 0 on success, -1 if any csp_buffer_get fails (operator should
+ * bump csp:buffer_count). csp_send transfers ownership of the packet, so
+ * the caller never frees on the success path; the failure path frees the
  * unsent packet here.
  */
 static int send_manifest_chunked(csp_conn_t *conn,
                                  const uint8_t *bytes, size_t len)
 {
+    csp_packet_t *header = csp_buffer_get(0);
+    if (header == NULL) {
+        return -1;
+    }
+    /* Big-endian uint32. Manifest size cap is 200 KB per design doc 1F so
+     * 32-bit length is comfortable headroom. */
+    uint32_t be = (uint32_t)len;
+    header->data[0] = (uint8_t)(be >> 24);
+    header->data[1] = (uint8_t)(be >> 16);
+    header->data[2] = (uint8_t)(be >> 8);
+    header->data[3] = (uint8_t)(be);
+    header->length = ATTEST_CSP_LEN_PREFIX;
+    csp_send(conn, header);
+
     size_t off = 0;
     while (off < len) {
         size_t chunk = len - off;

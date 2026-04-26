@@ -84,7 +84,7 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
     }
 
     csp_conn_t *conn = csp_connect(CSP_PRIO_NORM, node, ATTEST_CSP_PORT,
-                                   ATTEST_CSP_TIMEOUT_MS, CSP_O_RDP);
+                                   ATTEST_CSP_TIMEOUT_MS, CSP_O_NONE);
     if (conn == NULL) {
         fprintf(err,
                 "csh-attest: E101: connect to node %u port %u failed\n",
@@ -103,25 +103,55 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
     trigger->length = 1;
     csp_send(conn, trigger);
 
+    /*
+     * Read the 4-byte big-endian length prefix from the bird's first
+     * response packet. Per the protocol the prefix is a self-contained
+     * packet of exactly ATTEST_CSP_LEN_PREFIX bytes — it does not share
+     * a packet with manifest data.
+     */
+    csp_packet_t *header = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
+    if (header == NULL) {
+        fprintf(err,
+                "csh-attest: E102: timed out waiting for length header from "
+                "node %u\n", node);
+        csp_close(conn);
+        return 3;
+    }
+    if (header->length != ATTEST_CSP_LEN_PREFIX) {
+        fprintf(err,
+                "csh-attest: E104: malformed length header (got %u bytes, "
+                "expected %u)\n",
+                header->length, ATTEST_CSP_LEN_PREFIX);
+        csp_buffer_free(header);
+        csp_close(conn);
+        return 3;
+    }
+    size_t expected = ((size_t)header->data[0] << 24) |
+                      ((size_t)header->data[1] << 16) |
+                      ((size_t)header->data[2] << 8) |
+                      ((size_t)header->data[3]);
+    csp_buffer_free(header);
+
     uint8_t *buf = NULL;
     size_t len = 0, cap = 0;
     int rc = 0;
-    while (1) {
+    while (len < expected) {
         csp_packet_t *p = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
         if (p == NULL) {
-            /* Either clean close or timeout. RDP signals a normal close
-             * by returning NULL; on a real link a stuck peer also looks
-             * the same to us. We treat any NULL as end-of-stream and let
-             * the post-loop sanity check (len > 0) decide. */
-            break;
+            fprintf(err,
+                    "csh-attest: E102: short read from node %u "
+                    "(got %zu of %zu bytes)\n",
+                    node, len, expected);
+            free(buf);
+            csp_close(conn);
+            return 3;
         }
         if (buf_append(&buf, &len, &cap, p->data, p->length) != 0) {
             csp_buffer_free(p);
             fprintf(err, "csh-attest: E901: out of memory accumulating manifest\n");
-            rc = 3;
             free(buf);
             csp_close(conn);
-            return rc;
+            return 3;
         }
         csp_buffer_free(p);
     }

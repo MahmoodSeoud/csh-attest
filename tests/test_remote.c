@@ -119,6 +119,13 @@ static void test_remote_happy_path(void **state)
 
     char *out_buf = NULL, *err_buf = NULL;
     int rc = run_remote(node, &out_buf, &err_buf);
+    if (rc != 0) {
+        /* Diagnostic — surfaces the actual stderr text + any partial
+         * stdout in the CI log when the loopback round-trip fails. */
+        print_error("attest_remote_run rc=%d\n", rc);
+        print_error("stderr: %s\n", err_buf ? err_buf : "(null)");
+        print_error("stdout: %s\n", out_buf ? out_buf : "(null)");
+    }
     assert_int_equal(rc, 0);
     assert_int_equal(strlen(err_buf), 0);
 
