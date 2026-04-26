@@ -104,14 +104,27 @@ sodium_dep = dependency('libsodium', required: true)
 
 csh_attest_inc = include_directories('src', 'src/adapters')
 
-# slash is vendored under vendor/slash. Upstream spaceinventor/slash's
-# library code uses Linux-only headers (PATH_MAX, DT_DIR) without including
-# them, so it fails to build under -Werror on Ubuntu. We never need that
-# code at runtime — only the struct shape + macro for the ELF section emit.
+# slash is vendored under vendor/slash with the upstream layout
+# `vendor/slash/slash/{slash.h,optparse.h}` so apm_csh's
+# `#include <slash/slash.h>` and `<slash/optparse.h>` both resolve via the
+# single -I flag. Upstream spaceinventor/slash's library code uses
+# Linux-only headers (PATH_MAX, DT_DIR) without including them, so it
+# fails to build under -Werror on Ubuntu. We never need that code at
+# runtime — only the struct shape + macro for the ELF section emit.
 # slash_list_add and friends resolve at dlopen time against csh's loaded
-# slash. See vendor/slash/slash.h for the full rationale.
+# slash. See vendor/slash/slash/slash.h for the full rationale.
+#
+# vendor/apm_csh_compat carries minimal stubs for symbols apm_csh's
+# src/apm.c references but doesn't get headers for in our config (no
+# libparam → no transitive vmem.h). Currently just `vmem/vmem.h` with a
+# vmem_t forward decl + vmem_add prototype. Bundled into the same
+# declared dep so apm_csh's `dependency('slash', ...).partial_dependency(
+# includes: true)` picks up both directories.
 slash_inc = include_directories('vendor/slash')
-slash_dep = declare_dependency(include_directories: slash_inc)
+apm_csh_compat_inc = include_directories('vendor/apm_csh_compat')
+slash_dep = declare_dependency(
+    include_directories: [slash_inc, apm_csh_compat_inc],
+)
 
 # Make our vendored slash the resolution target for any subproject that does
 # `dependency('slash', fallback: ['slash', 'slash_dep'], required: false)`.

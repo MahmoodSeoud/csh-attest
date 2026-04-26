@@ -16,8 +16,9 @@
  * Linux-only — gated in tests/meson.build alongside the apm_csh dep.
  */
 
-void vmem_add(void *start, void *stop);
-void vmem_add(void *start, void *stop)
+#include <vmem/vmem.h>
+
+void vmem_add(vmem_t *start, vmem_t *stop)
 {
     (void)start;
     (void)stop;
