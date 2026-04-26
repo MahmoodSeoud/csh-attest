@@ -41,6 +41,25 @@ int csh_attest_init(void);
  */
 int attest_diff_run(int argc, char **argv, FILE *out, FILE *err);
 
+/*
+ * Driver for the `attest --verify` command. Parses a signed envelope
+ * produced by `attest --sign`, extracts the inner canonical manifest,
+ * and verifies the Ed25519 signature with the supplied public key.
+ *
+ * argv layout: argv[0] is the command name (ignored); argv[1] is the
+ * Ed25519 public key file (32 raw bytes); argv[2] is the path to the
+ * signed JSON envelope.
+ *
+ * Returns the design-doc shell exit code (NOT a SLASH_E* value):
+ *   0 — signature valid (manifest authentic)
+ *   1 — signature invalid (tampered manifest or wrong public key)
+ *   2 — usage error, file load failure, malformed envelope
+ *
+ * On exit 0, no output is written to `out` — verification is a pass/fail
+ * gate, not a renderer. On exit 1 a single E201 line is written to `err`.
+ */
+int attest_verify_run(int argc, char **argv, FILE *out, FILE *err);
+
 #ifdef __cplusplus
 }
 #endif

@@ -99,6 +99,138 @@ static int load_file(const char *path, uint8_t **out_bytes, size_t *out_len,
     return 0;
 }
 
+/*
+ * Decode one lowercase-hex byte (two chars at *s) into *out. Strict —
+ * uppercase or non-hex chars are rejected so callers can rely on a parsed
+ * envelope sig being byte-identical to the one the canonical emitter wrote.
+ * Returns 0 on success, -1 on any non-[0-9a-f] character.
+ */
+static int hex_byte(const char *s, uint8_t *out)
+{
+    uint8_t v = 0;
+    for (int i = 0; i < 2; i++) {
+        char c = s[i];
+        v = (uint8_t)(v << 4);
+        if (c >= '0' && c <= '9') {
+            v = (uint8_t)(v | (uint8_t)(c - '0'));
+        } else if (c >= 'a' && c <= 'f') {
+            v = (uint8_t)(v | (uint8_t)(c - 'a' + 10));
+        } else {
+            return -1;
+        }
+    }
+    *out = v;
+    return 0;
+}
+
+/*
+ * Look up a top-level member by exact key match. Linear scan — the v1
+ * envelope has 2 members so this stays O(n) trivially. Returns NULL if
+ * absent. The parser already enforces sorted unique keys.
+ */
+static const struct jcsp_value *envelope_get(const struct jcsp_value *env,
+                                             const char *key)
+{
+    for (size_t i = 0; i < env->u.object.n; i++) {
+        if (strcmp(env->u.object.members[i].key, key) == 0) {
+            return &env->u.object.members[i].value;
+        }
+    }
+    return NULL;
+}
+
+int attest_verify_run(int argc, char **argv, FILE *out, FILE *err)
+{
+    (void)out; /* verify is silent on success — only stderr on failure */
+
+    if (argc != 3) {
+        fprintf(err,
+                "csh-attest: usage: "
+                "attest --verify <pubkey-file> <signed.json>\n");
+        return 2;
+    }
+    const char *pubkey_path = argv[1];
+    const char *signed_path = argv[2];
+
+    if (attest_sign_init() != ATTEST_SIGN_OK) {
+        fprintf(err, "csh-attest: E205: libsodium init failed\n");
+        return 2;
+    }
+
+    uint8_t pubkey[ATTEST_SIGN_PUBLIC_KEY_BYTES];
+    int load_rc = attest_sign_load_public_key(pubkey_path, pubkey);
+    if (load_rc != ATTEST_SIGN_OK) {
+        fprintf(err,
+                "csh-attest: E203: cannot load public key: %s\n", pubkey_path);
+        return 2;
+    }
+
+    uint8_t *bytes = NULL;
+    size_t len = 0;
+    struct jcsp_value env;
+    memset(&env, 0, sizeof(env));
+    int rc = 2;
+
+    if (load_file(signed_path, &bytes, &len, err) != 0) {
+        goto cleanup;
+    }
+    if (jcsp_parse(bytes, len, &env) != 0) {
+        fprintf(err,
+                "csh-attest: E001: %s is not JCS-canonical JSON\n",
+                signed_path);
+        goto cleanup;
+    }
+    if (env.type != JCSP_OBJECT) {
+        fprintf(err,
+                "csh-attest: E001: %s envelope must be a JSON object\n",
+                signed_path);
+        goto cleanup;
+    }
+
+    const struct jcsp_value *manifest = envelope_get(&env, "manifest");
+    const struct jcsp_value *sig = envelope_get(&env, "sig");
+    if (manifest == NULL || sig == NULL ||
+        manifest->type != JCSP_STRING || sig->type != JCSP_STRING) {
+        fprintf(err,
+                "csh-attest: E001: %s missing or malformed "
+                "\"manifest\"/\"sig\" fields\n",
+                signed_path);
+        goto cleanup;
+    }
+    if (sig->u.string.len != ATTEST_SIGN_SIGNATURE_BYTES * 2) {
+        fprintf(err,
+                "csh-attest: E001: signature length %zu, expected %u hex chars\n",
+                sig->u.string.len, ATTEST_SIGN_SIGNATURE_BYTES * 2);
+        goto cleanup;
+    }
+
+    uint8_t signature[ATTEST_SIGN_SIGNATURE_BYTES];
+    for (size_t i = 0; i < ATTEST_SIGN_SIGNATURE_BYTES; i++) {
+        if (hex_byte(sig->u.string.bytes + i * 2, &signature[i]) != 0) {
+            fprintf(err,
+                    "csh-attest: E001: signature contains non-hex character\n");
+            goto cleanup;
+        }
+    }
+
+    int verify_rc = attest_verify_canonical(
+        (const uint8_t *)manifest->u.string.bytes, manifest->u.string.len,
+        signature, pubkey);
+    if (verify_rc == ATTEST_SIGN_OK) {
+        rc = 0;
+    } else {
+        fprintf(err,
+                "csh-attest: E201: signature verification failed for %s\n",
+                signed_path);
+        rc = 1;
+    }
+
+cleanup:
+    jcsp_value_free(&env);
+    free(bytes);
+    return rc;
+}
+
 int attest_diff_run(int argc, char **argv, FILE *out, FILE *err)
 {
     bool json_mode = false;
@@ -248,11 +380,16 @@ static int attest_cmd(struct slash *slash)
 {
     bool emit = false;
     const char *sign_key_path = NULL;
+    const char *verify_pubkey_path = NULL;
+    const char *verify_signed_path = NULL;
 
     /*
-     * Hand-rolled arg parsing — only two flags, no need for optparse + its
-     * link-time symbols. Accepts: `--emit` (no value), `--sign <keyfile>`
-     * (one positional value), or both. Anything else is rejected.
+     * Hand-rolled arg parsing — three subcommand flags, no need for optparse
+     * + its link-time symbols. Accepts:
+     *   --emit                          (no value)
+     *   --sign <keyfile>                (one positional value)
+     *   --verify <pubkey> <signed.json> (two positional values)
+     * Anything else is rejected. --verify is exclusive with --emit/--sign.
      */
     for (int i = 1; i < slash->argc; i++) {
         const char *arg = slash->argv[i];
@@ -264,15 +401,42 @@ static int attest_cmd(struct slash *slash)
                 return SLASH_EUSAGE;
             }
             sign_key_path = slash->argv[++i];
+        } else if (strcmp(arg, "--verify") == 0) {
+            if (i + 2 >= slash->argc) {
+                fprintf(stderr,
+                        "csh-attest: --verify requires "
+                        "<pubkey-file> <signed.json>\n");
+                return SLASH_EUSAGE;
+            }
+            verify_pubkey_path = slash->argv[++i];
+            verify_signed_path = slash->argv[++i];
         } else {
             fprintf(stderr, "csh-attest: unknown argument: %s\n", arg);
             return SLASH_EUSAGE;
         }
     }
 
+    if (verify_pubkey_path != NULL) {
+        if (emit || sign_key_path != NULL) {
+            fprintf(stderr,
+                    "csh-attest: --verify is exclusive with --emit/--sign\n");
+            return SLASH_EUSAGE;
+        }
+        char *vargv[] = {
+            (char *)"attest --verify",
+            (char *)verify_pubkey_path,
+            (char *)verify_signed_path,
+        };
+        /* Driver returns 0/1/2 shell-style. csh propagates this verbatim
+         * via `csh -c`, so the design-doc 0=valid / 1=invalid / 2=error
+         * contract reaches the caller. */
+        return attest_verify_run(3, vargv, stdout, stderr);
+    }
+
     if (!emit && sign_key_path == NULL) {
         fprintf(stderr,
-                "csh-attest: pass --emit or --sign <keyfile>\n");
+                "csh-attest: pass --emit, --sign <keyfile>, "
+                "or --verify <pubkey> <signed.json>\n");
         return SLASH_EUSAGE;
     }
 
@@ -381,8 +545,9 @@ static int attest_cmd(struct slash *slash)
 
     return env_rc == 0 ? SLASH_SUCCESS : SLASH_EIO;
 }
-slash_command(attest, attest_cmd, "--emit | --sign <keyfile>",
-              "Emit attestation manifest, optionally signed");
+slash_command(attest, attest_cmd,
+              "--emit | --sign <keyfile> | --verify <pubkey> <signed.json>",
+              "Emit, sign, or verify an attestation manifest");
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
 /* csh APM ABI handshake. v10 matches current csh master (see
@@ -396,7 +561,7 @@ const int apm_init_version = 10;
 void libinfo(void);
 void libinfo(void)
 {
-    printf("csh-attest 0.0.1 — read-only attestation APM (scaffold)\n");
+    printf("csh-attest 0.1.0 — read-only attestation APM\n");
 }
 
 /*

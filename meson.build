@@ -1,7 +1,7 @@
 project(
     'csh-attest',
     'c',
-    version: '0.0.1',
+    version: '0.1.0',
     license: 'Apache-2.0',
     default_options: [
         'c_std=c11',
@@ -45,6 +45,7 @@ endif
 csh_attest_sources = [
     'src/csh_attest.c',
     'src/attest.c',
+    'src/adapters/kernel_build_id.c',
     'src/adapters/kernel_uname.c',
     'src/adapters/modules_list.c',
     'src/adapters/etc_merkle.c',

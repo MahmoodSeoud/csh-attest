@@ -113,6 +113,10 @@ int attest_emit(struct attest_emitter *em);
  * one canonical place to look up callbacks AND so unit tests can call
  * any adapter directly without going through the walker.
  *
+ * - kernel.build_id: GNU build-id ELF note from /sys/kernel/notes. The
+ *   cryptographic identity of the kernel image — strictly stronger than
+ *   kernel.uname for parity attestation. On non-Linux dev or when the
+ *   notes file is missing, emits an empty string (deterministic).
  * - kernel.uname: POSIX uname(). Works on Linux (production) + macOS
  *   (compile-check dev target).
  * - modules.list: Linux /proc/modules + /sys/module/<name>/srcversion.
@@ -122,6 +126,7 @@ int attest_emit(struct attest_emitter *em);
  *   any Unix; on macOS the allowlisted paths usually don't exist so
  *   the result is the merkle of all-empty content (still deterministic).
  */
+int attest_adapter_kernel_build_id(struct attest_emitter *em);
 int attest_adapter_kernel_uname(struct attest_emitter *em);
 int attest_adapter_modules_list(struct attest_emitter *em);
 int attest_adapter_etc_merkle(struct attest_emitter *em);

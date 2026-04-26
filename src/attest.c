@@ -29,6 +29,16 @@ const attest_field_t attest_fields[] = {
         .determinism = DET_STABLE,
     },
     {
+        /* "kernel.build_id" sorts before "kernel.uname" because at byte
+         * index 7 the period (0x2E) is followed by 'b' (0x62) here vs. 'u'
+         * (0x75) there — JCS-canonical order is byte-wise. */
+        .name = "kernel.build_id",
+        .emit = attest_adapter_kernel_build_id,
+        .size_budget = 64, /* design doc 1F: 64 B. */
+        .required = true,
+        .determinism = DET_STABLE,
+    },
+    {
         .name = "kernel.uname",
         .emit = attest_adapter_kernel_uname,
         .size_budget = 256, /* uname struct: ~4 fields × ~65 chars. */
