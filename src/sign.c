@@ -2,12 +2,10 @@
  * Ed25519 sign / verify wrapper. Pure thin layer over libsodium —
  * concentrates the libsodium include + version-handshake to one
  * translation unit so the rest of the codebase stays sodium-agnostic.
+ *
+ * O_CLOEXEC requires _GNU_SOURCE on glibc/musl; set project-wide for
+ * Linux in meson.build (this file just consumes it).
  */
-
-/* O_CLOEXEC is only exposed under glibc when _GNU_SOURCE / _POSIX_C_SOURCE
- * >= 200809L is defined. macOS pre-declares it so local builds passed; CI
- * on Ubuntu/Alpine fails without this. */
-#define _GNU_SOURCE
 
 #include "sign.h"
 

@@ -9,11 +9,10 @@
  *   - --json + --no-color force color off regardless of TTY
  *
  * Round-trip parser tests live in test_jcs_parse.c.
+ *
+ * open_memstream / mkstemp / unistd write require _GNU_SOURCE on glibc /
+ * musl; set project-wide for Linux in meson.build.
  */
-
-/* Linux glibc/musl gate open_memstream(), mkstemp(), and write() in unistd
- * behind feature-test macros. macOS exposes them unconditionally. */
-#define _GNU_SOURCE
 
 #include <setjmp.h>
 #include <stdarg.h>

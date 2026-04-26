@@ -1,5 +1,5 @@
-/* Linux glibc/musl gate O_CLOEXEC behind _GNU_SOURCE. */
-#define _GNU_SOURCE
+/* O_CLOEXEC requires _GNU_SOURCE on glibc / musl; set project-wide for
+ * Linux in meson.build. */
 
 #include <fcntl.h>
 #include <stdarg.h>

@@ -70,6 +70,14 @@ slash_inc = include_directories('vendor/slash')
 slash_dep = declare_dependency(include_directories: slash_inc)
 if is_linux
     add_project_arguments('-DCSH_ATTEST_HAVE_SLASH=1', language: 'c')
+    # macOS exposes O_CLOEXEC, fileno, isatty, open_memstream, mkstemp, etc.
+    # unconditionally; glibc and musl gate them behind feature-test macros.
+    # Set _GNU_SOURCE project-wide on Linux so what works on the dev machine
+    # also compiles in CI. Without this, every new translation unit that
+    # touches those symbols requires a per-file #define and, until someone
+    # remembers, fails Linux CI (sessions 5 and 6 both burned commits to
+    # this exact problem). One project-level flag closes the failure class.
+    add_project_arguments('-D_GNU_SOURCE=1', language: 'c')
 endif
 
 # csh discovers APMs by `libcsh_*` prefix + `.so` suffix (see
