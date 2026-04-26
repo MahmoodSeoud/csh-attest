@@ -55,15 +55,16 @@ static void test_libmain_walks_slash_section(void **state)
     /*
      * libmain should iterate the `slash` ELF section, find every
      * slash_command(...) entry in csh_attest.c, and call slash_list_add()
-     * on each. csh_attest.c currently registers two: hello and attest.
-     * Linker order within a section is implementation-defined; we assert
-     * count + presence-by-name, not order.
+     * on each. csh_attest.c currently registers three: hello, attest,
+     * and attest-diff. Linker order within a section is implementation-
+     * defined; we assert count + presence-by-name, not order.
      */
     assert_int_equal(libmain(), 0);
-    assert_int_equal(slash_list_add_count, 2);
+    assert_int_equal(slash_list_add_count, 3);
 
     bool saw_hello = false;
     bool saw_attest = false;
+    bool saw_attest_diff = false;
     for (size_t i = 0; i < slash_list_add_count; i++) {
         const char *name = slash_list_add_seen[i];
         if (name == NULL) {
@@ -73,10 +74,13 @@ static void test_libmain_walks_slash_section(void **state)
             saw_hello = true;
         } else if (strcmp(name, "attest") == 0) {
             saw_attest = true;
+        } else if (strcmp(name, "attest-diff") == 0) {
+            saw_attest_diff = true;
         }
     }
     assert_true(saw_hello);
     assert_true(saw_attest);
+    assert_true(saw_attest_diff);
 }
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
