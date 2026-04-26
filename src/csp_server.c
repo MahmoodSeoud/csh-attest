@@ -93,7 +93,7 @@ static int send_manifest_chunked(csp_conn_t *conn,
  */
 static void handle_one_request(csp_conn_t *conn)
 {
-    csp_packet_t *trigger = csp_read(conn, ATTEST_CSP_TIMEOUT_MS);
+    csp_packet_t *trigger = csp_read(conn, attest_csp_timeout_ms());
     if (trigger != NULL) {
         csp_buffer_free(trigger);
     }
@@ -125,10 +125,11 @@ static void *server_thread(void *unused)
     (void)unused;
 
     csp_socket_t sock = {0};
-    if (csp_bind(&sock, ATTEST_CSP_PORT) != 0) {
+    unsigned port = attest_csp_port();
+    if (csp_bind(&sock, port) != 0) {
         fprintf(stderr,
                 "csh-attest: csp_bind(%u) failed; server thread exiting\n",
-                ATTEST_CSP_PORT);
+                port);
         return NULL;
     }
     /* Backlog of 4 — operator-driven request rate, not high-rate

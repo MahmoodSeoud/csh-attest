@@ -1,7 +1,7 @@
 project(
     'csh-attest',
     'c',
-    version: '0.2.0',
+    version: '0.3.0',
     license: 'Apache-2.0',
     default_options: [
         # gnu11 (NOT c11) so the `endian.h` GNU extensions
@@ -85,6 +85,11 @@ csh_attest_sources = [
     'src/jcs.c',
     'src/jcs_parse.c',
     'src/sign.c',
+    # csp_protocol.c is the env-var knob accessor (attest_csp_port,
+    # attest_csp_timeout_ms). Pure stdlib — compiles on macOS too — so it
+    # lives in the common source list, not the Linux-only csp block. Same
+    # function gets exercised by tests/test_csp_knobs.c on every platform.
+    'src/csp_protocol.c',
 ]
 
 # CSP transport sources (bird-side server + ground-side client) compile only

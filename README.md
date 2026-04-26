@@ -12,12 +12,13 @@ diffed. The intended use is **FlatSat ↔ bird parity attestation** — proving
 the ground replica matches the on-orbit asset before an uplink, with a
 deterministic byte-comparable artifact you can commit to a mission repo.
 
-`v0.2.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
-`kernel.uname`, `modules.list`) plus the `schema_version` envelope, and
-adds `attest --remote <node>` for fetching a signed manifest from a
-remote bird over libcsp. See [SCHEMA.md](./SCHEMA.md) for the
-breaking-change policy and [CHANGELOG.md](./CHANGELOG.md) for release
-history.
+`v0.3.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
+`kernel.uname`, `modules.list`) plus the `schema_version` envelope,
+`attest --remote <node>` for fetching a signed manifest from a remote
+bird over libcsp, and env-var-overridable port/timeout knobs (see
+[Runtime knobs](#runtime-knobs) below). See [SCHEMA.md](./SCHEMA.md)
+for the breaking-change policy and [CHANGELOG.md](./CHANGELOG.md) for
+release history.
 
 License: Apache-2.0.
 
@@ -99,10 +100,32 @@ DRIFT: 2 of 5 fields divergent. Exit code: 1.
 ### `attest --remote <node>`
 
 Fetches a manifest from a remote bird over libcsp. The bird's csh-attest
-APM listens on CSP port `100` (configurable in a future minor bump);
-ground side connects, the bird walks its introspection table, and the
-canonical manifest streams back length-prefixed. Single-pass operation
-for now — pass-boundary resume via libdtp is deferred.
+APM listens on the port returned by `attest_csp_port()` (default `100`,
+overridable via `ATTEST_CSP_PORT` — see [Runtime knobs](#runtime-knobs));
+ground side connects on the same port, the bird walks its introspection
+table, and the canonical manifest streams back length-prefixed.
+Single-pass operation for now — pass-boundary resume via libdtp is
+deferred.
+
+## Runtime knobs
+
+The bird and the ground side both honour two environment variables. They
+are read on each server bind / client connect (no caching, no restart
+needed for tests; production typically sets them once in the systemd
+unit or csh launch wrapper). Out-of-range or unparseable values fall
+back to the compile-time default with a one-line stderr warning so
+misconfig is visible.
+
+| Var                      | Default | Range       | Effect                                    |
+|--------------------------|---------|-------------|-------------------------------------------|
+| `ATTEST_CSP_PORT`        | `100`   | `1..127`    | CSP port for `attest --remote` bind/connect |
+| `ATTEST_CSP_TIMEOUT_MS`  | `5000`  | `100..60000`| Per-packet read timeout on the ground side  |
+
+The bird and the ground process must agree on the port — mismatched
+overrides silently fail to connect (`E101`). `ATTEST_CSP_MAGIC` (the
+trigger byte) and `ATTEST_CSP_MAX_PAYLOAD` (linked to libcsp's
+`buffer_size` build option) are intentionally **not** overridable; they
+are protocol- and build-time constants, not configuration.
 
 ## CI integration
 

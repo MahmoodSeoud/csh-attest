@@ -601,7 +601,7 @@ slash_command(attest, attest_cmd,
 void libinfo(void);
 void libinfo(void)
 {
-    printf("csh-attest 0.2.0 — read-only attestation APM\n");
+    printf("csh-attest 0.3.0 — read-only attestation APM\n");
 }
 
 /*

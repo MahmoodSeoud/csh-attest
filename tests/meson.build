@@ -14,6 +14,7 @@ csh_attest_test_sources = [
     '../src/jcs.c',
     '../src/jcs_parse.c',
     '../src/sign.c',
+    '../src/csp_protocol.c',
 ]
 csh_attest_test_deps = [cmocka_dep, sodium_dep]
 if is_linux
@@ -167,6 +168,20 @@ test_sign = executable(
 )
 
 test('sign', test_sign)
+
+# Pure-stdlib unit test for the env-var knob accessors. Doesn't link any
+# csh_attest source other than csp_protocol.c, so it runs identically on
+# macOS and Linux.
+test_csp_knobs = executable(
+    'test_csp_knobs',
+    'test_csp_knobs.c',
+    '../src/csp_protocol.c',
+    include_directories: csh_attest_inc,
+    dependencies: [cmocka_dep],
+    install: false,
+)
+
+test('csp_knobs', test_csp_knobs)
 
 # Exercises the attest_verify_run driver end-to-end: builds a real signed
 # envelope through the canonical emitter, writes it + a pubkey to disk,

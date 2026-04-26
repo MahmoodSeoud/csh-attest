@@ -4,6 +4,84 @@ All notable changes to csh-attest are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely; the
 schema's own breaking-change policy lives in [SCHEMA.md](./SCHEMA.md).
 
+## 0.3.0 — 2026-04-26
+
+Hardening release. The bird-side server and ground-side client now read
+`ATTEST_CSP_PORT` and `ATTEST_CSP_TIMEOUT_MS` from the environment so
+ops can retune without rebuilding. The internal APM dispatch path swaps
+to upstream `libapm_csh::libmain`, retiring the hand-rolled section
+walker that lived in `csh_attest.c` since session 2.
+
+### Added
+
+- `attest_csp_port()` / `attest_csp_timeout_ms()` accessors in
+  `src/csp_protocol.{h,c}`. Both call sites — `csp_server.c` (bind) and
+  `csp_client.c` (connect, read timeouts) — now go through these instead
+  of the compile-time macros. Defaults unchanged (port 100, timeout
+  5000ms); `ATTEST_CSP_PORT_DEFAULT` and `ATTEST_CSP_TIMEOUT_MS_DEFAULT`
+  are the new macro names. Out-of-range or unparseable values fall back
+  to the default with a one-line stderr warning so misconfig is visible.
+- Validation ranges: port `1..127` (libcsp's `port_max_bind` cap is 128
+  and 0 is the broadcast convention); timeout `100..60000` ms (catches
+  the "5 instead of 5000" typo without locking out fast loopback test
+  setups).
+- `tests/test_csp_knobs.c` — pure-stdlib cmocka coverage for the
+  accessors: defaults, valid override, both range boundaries, the
+  zero/above-range/garbage/trailing-garbage paths. Runs on macOS too
+  (no libcsp dependency), keeping the env-parse logic exercised
+  everywhere we test.
+- `subprojects/apm_csh.wrap` is now actually linked. The wrap also
+  ships a tiny `diff_files` patch that adds an `#ifndef APM_HAVE_PARAM
+  #include <vmem/vmem.h>` to upstream `apm.c` so it compiles for us
+  without dragging in libparam.
+- `vendor/apm_csh_compat/vmem/vmem.h` and `vendor/slash/slash/{slash,
+  optparse}.h` carry the minimal forward-decls needed for apm_csh's
+  upstream-layout includes (`<slash/slash.h>`, `<slash/optparse.h>`,
+  `<vmem/vmem.h>`) to resolve in our config.
+- `src/apm_link_stubs.c` — weak no-op `vmem_add` so the .so links under
+  meson's default `-Wl,--no-undefined`. Production csh provides the
+  real symbol; the runtime guard short-circuits because we have no
+  vmem section.
+
+### Changed
+
+- `src/csh_attest.c` lost ~30 lines: `apm_init_version`, `libmain`, the
+  weak `slash_list_add` decl, and the slash section walker are now
+  provided by upstream `libapm_csh` (linked via `.as_link_whole()`).
+  We keep `apm_init` (strong def overrides apm_csh's weak hidden
+  forward decl in `<apm/apm.h>`) and `libinfo` (csh convention, not
+  in apm_csh).
+- macOS dev builds keep a minimal `apm_init_version` + `libmain` shell
+  gated `#ifndef __linux__`. macOS isn't a load target — libcsp +
+  libapm_csh aren't built there.
+- README quickstart documents the env-var knobs and the libapm_csh
+  swap.
+
+### CI
+
+- Ubuntu CI now installs meson via `pip` (>= 1.0) instead of apt.
+  Ubuntu 22.04's apt meson is 0.61.x; `diff_files` for wrap-git
+  subprojects requires meson 0.62+. Without the bump the apm_csh
+  patch silently doesn't apply on Ubuntu (it does on Alpine 3.19's
+  apk meson, which is already at 1.3.x).
+
+### Notes — known landmines
+
+- Bird and ground must agree on `ATTEST_CSP_PORT`. Mismatched env
+  vars across the two processes silently fail to connect (csp_connect
+  returns NULL → `E101`).
+- `ATTEST_CSP_MAGIC` (0x41) and `ATTEST_CSP_MAX_PAYLOAD` (1900) are
+  intentionally **not** env-overridable. The magic is a protocol
+  constant; the max payload is wedged to libcsp's `buffer_size`
+  tunable in `meson.build`.
+
+### Out of scope
+
+- libdtp `.session.partial` resume for lossy-pass robustness.
+- libparam-backed knobs (this release uses plain env vars; the
+  libparam path lands when we need named-knob discovery from `csh ps`).
+- Hardware bring-up against a real radio.
+
 ## 0.2.0 — 2026-04-26
 
 Adds `attest --remote <node>`: pull a signed manifest from a remote bird

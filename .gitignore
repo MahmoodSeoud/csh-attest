@@ -2,6 +2,7 @@ build/
 build-*/
 .cache/
 .DS_Store
+.claude/
 *.swp
 *.o
 *.so
