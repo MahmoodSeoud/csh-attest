@@ -4,6 +4,11 @@
  * translation unit so the rest of the codebase stays sodium-agnostic.
  */
 
+/* O_CLOEXEC is only exposed under glibc when _GNU_SOURCE / _POSIX_C_SOURCE
+ * >= 200809L is defined. macOS pre-declares it so local builds passed; CI
+ * on Ubuntu/Alpine fails without this. */
+#define _GNU_SOURCE
+
 #include "sign.h"
 
 #include <fcntl.h>

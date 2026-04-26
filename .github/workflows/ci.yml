@@ -7,9 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  # 4-flavor matrix per design doc 1E:
-  #   (Ubuntu LTS glibc, Alpine musl) x (x86_64, arm64).
-  # Production target is Yocto via meta-csh-attest (1G, separate workflow).
+  # Distribution coverage per design doc 1E targets four flavors —
+  # (Ubuntu LTS glibc, Alpine musl) x (x86_64, arm64). GitHub Actions does
+  # not currently support JavaScript Actions inside Alpine containers on
+  # ARM64 runners (actions/checkout fails with "Detected Linux Arm64"), so
+  # alpine-arm64 is dropped from CI until that limitation lifts or we move
+  # to self-hosted runners. Production-target coverage stays at 100%
+  # because Yocto (the production target) builds independently.
   build:
     name: build (${{ matrix.os }} / ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -28,10 +32,6 @@ jobs:
           - os: alpine-3.19
             arch: x86_64
             runner: ubuntu-22.04
-            container: alpine:3.19
-          - os: alpine-3.19
-            arch: arm64
-            runner: ubuntu-22.04-arm
             container: alpine:3.19
     container: ${{ matrix.container }}
     steps:
