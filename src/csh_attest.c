@@ -340,7 +340,7 @@ cleanup:
 }
 
 #ifdef CSH_ATTEST_HAVE_SLASH
-#include <slash.h>
+#include <slash/slash.h>
 
 static int hello_cmd(struct slash *slash)
 {
