@@ -12,9 +12,12 @@ diffed. The intended use is **FlatSat ↔ bird parity attestation** — proving
 the ground replica matches the on-orbit asset before an uplink, with a
 deterministic byte-comparable artifact you can commit to a mission repo.
 
-`v0.1.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
-`kernel.uname`, `modules.list`) plus the `schema_version` envelope. See
-[SCHEMA.md](./SCHEMA.md) for the breaking-change policy.
+`v0.2.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
+`kernel.uname`, `modules.list`) plus the `schema_version` envelope, and
+adds `attest --remote <node>` for fetching a signed manifest from a
+remote bird over libcsp. See [SCHEMA.md](./SCHEMA.md) for the
+breaking-change policy and [CHANGELOG.md](./CHANGELOG.md) for release
+history.
 
 License: Apache-2.0.
 
