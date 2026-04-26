@@ -127,11 +127,20 @@ meson.override_dependency('slash', slash_dep)
 # macOS keeps the no-CSP dev build via the `is_linux` gate below; the
 # unit-test paths that don't require CSP still run there.
 #
-# libapm_csh (subprojects/apm_csh.wrap) is referenced from step 2 onward —
-# its libmain conflicts with our hand-rolled walker until that swap lands,
-# so we hold off declaring the dependency in step 1.
+# libapm_csh (subprojects/apm_csh.wrap) provides the upstream-compatible
+# libmain that walks the slash / param / vmem ELF sections and finally
+# invokes our weak `apm_init()` hook. Linked via .as_link_whole() so its
+# libmain (which appears unused before dlopen) survives stripping. Its
+# transitive header deps (csp / param / slash) are partial — headers only,
+# no link — so we don't have to add libparam too. macOS skips this dep and
+# uses the minimal local libmain shell at the bottom of csh_attest.c.
 if is_linux
     csp_dep = dependency('csp', fallback: ['csp', 'csp_dep'], required: true)
+    apm_csh_dep = dependency(
+        'apm_csh',
+        fallback: ['apm_csh', 'apm_csh_dep'],
+        required: true,
+    )
 endif
 
 if is_linux
@@ -151,9 +160,11 @@ endif
 # match.
 csh_attest_deps = [slash_dep, sodium_dep]
 if is_linux
-    # Includes the CSP transport surface that the attest --remote command
-    # builds on top of (sessions 9+). Linux-only; macOS dev builds skip CSP.
+    # CSP transport for `attest --remote` (sessions 9+) and libapm_csh's
+    # upstream libmain (session 11 swap). Both Linux-only; macOS dev builds
+    # skip CSP and use the minimal local libmain shell in csh_attest.c.
     csh_attest_deps += csp_dep
+    csh_attest_deps += apm_csh_dep
 endif
 
 csh_attest_all_sources = csh_attest_sources

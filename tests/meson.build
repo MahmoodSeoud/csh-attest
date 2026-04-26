@@ -20,8 +20,16 @@ if is_linux
     csh_attest_test_sources += [
         '../src/csp_server.c',
         '../src/csp_client.c',
+        # Link-time stub for vmem_add (referenced unconditionally by
+        # libapm_csh::libmain, runtime-guarded by the empty vmem section).
+        # Required for any test binary that pulls in csh_attest_test_sources
+        # because apm_csh_dep below uses .as_link_whole().
+        'apm_test_stubs.c',
     ]
     csh_attest_test_deps += csp_dep
+    # Same upstream libmain that csh_attest_lib links — keeps the test build
+    # exercising the same dispatch path the production .so does.
+    csh_attest_test_deps += apm_csh_dep
 endif
 
 test_init = executable(
