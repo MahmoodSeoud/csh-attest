@@ -4,7 +4,14 @@ project(
     version: '0.1.0',
     license: 'Apache-2.0',
     default_options: [
-        'c_std=c11',
+        # gnu11 (NOT c11) so the `endian.h` GNU extensions
+        # (htobe32 / be32toh / etc) are visible without each TU having to
+        # pre-declare _GNU_SOURCE. libcsp's wire-format code uses these
+        # extensively; under strict c11 its build fails with
+        # `implicit-declaration` -Werror. Our own code already assumed
+        # _GNU_SOURCE on Linux (set as a project arg below); switching to
+        # gnu11 makes that universal across subprojects too.
+        'c_std=gnu11',
         'warning_level=3',
         'werror=true',
         'b_ndebug=if-release',
