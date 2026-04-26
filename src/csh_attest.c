@@ -38,6 +38,14 @@
 #include "jcs_parse.h"
 #include "sign.h"
 
+#ifdef __linux__
+/* CSP transport for `attest --remote`. Linux-only — libcsp's POSIX driver
+ * doesn't compile on macOS clang under -Werror. macOS dev path keeps the
+ * non-CSP build; the remote dispatch below is gated on the same macro. */
+#include "csp_client.h"
+#include "csp_server.h"
+#endif
+
 /*
  * File loader for attest-diff. Reads `path` into a heap buffer; caller
  * frees. 1 MB sanity cap is well above the design doc's 200 KB hard cap
@@ -382,14 +390,17 @@ static int attest_cmd(struct slash *slash)
     const char *sign_key_path = NULL;
     const char *verify_pubkey_path = NULL;
     const char *verify_signed_path = NULL;
+    const char *remote_node = NULL;
 
     /*
-     * Hand-rolled arg parsing — three subcommand flags, no need for optparse
+     * Hand-rolled arg parsing — four subcommand flags, no need for optparse
      * + its link-time symbols. Accepts:
      *   --emit                          (no value)
      *   --sign <keyfile>                (one positional value)
      *   --verify <pubkey> <signed.json> (two positional values)
-     * Anything else is rejected. --verify is exclusive with --emit/--sign.
+     *   --remote <node>                 (one positional value)
+     * Anything else is rejected. --verify and --remote are each exclusive
+     * with everything else; --emit and --sign coexist (--sign implies emit).
      */
     for (int i = 1; i < slash->argc; i++) {
         const char *arg = slash->argv[i];
@@ -410,6 +421,13 @@ static int attest_cmd(struct slash *slash)
             }
             verify_pubkey_path = slash->argv[++i];
             verify_signed_path = slash->argv[++i];
+        } else if (strcmp(arg, "--remote") == 0) {
+            if (i + 1 >= slash->argc) {
+                fprintf(stderr,
+                        "csh-attest: --remote requires <node>\n");
+                return SLASH_EUSAGE;
+            }
+            remote_node = slash->argv[++i];
         } else {
             fprintf(stderr, "csh-attest: unknown argument: %s\n", arg);
             return SLASH_EUSAGE;
@@ -417,9 +435,10 @@ static int attest_cmd(struct slash *slash)
     }
 
     if (verify_pubkey_path != NULL) {
-        if (emit || sign_key_path != NULL) {
+        if (emit || sign_key_path != NULL || remote_node != NULL) {
             fprintf(stderr,
-                    "csh-attest: --verify is exclusive with --emit/--sign\n");
+                    "csh-attest: --verify is exclusive with "
+                    "--emit/--sign/--remote\n");
             return SLASH_EUSAGE;
         }
         char *vargv[] = {
@@ -433,10 +452,28 @@ static int attest_cmd(struct slash *slash)
         return attest_verify_run(3, vargv, stdout, stderr);
     }
 
+    if (remote_node != NULL) {
+        if (emit || sign_key_path != NULL) {
+            fprintf(stderr,
+                    "csh-attest: --remote is exclusive with --emit/--sign\n");
+            return SLASH_EUSAGE;
+        }
+#ifdef __linux__
+        char *rargv[] = {(char *)"attest --remote", (char *)remote_node};
+        return attest_remote_run(2, rargv, stdout, stderr);
+#else
+        fprintf(stderr,
+                "csh-attest: E101: --remote requires the libcsp transport "
+                "(Linux build only)\n");
+        return SLASH_EIO;
+#endif
+    }
+
     if (!emit && sign_key_path == NULL) {
         fprintf(stderr,
                 "csh-attest: pass --emit, --sign <keyfile>, "
-                "or --verify <pubkey> <signed.json>\n");
+                "--verify <pubkey> <signed.json>, "
+                "or --remote <node>\n");
         return SLASH_EUSAGE;
     }
 
@@ -546,8 +583,9 @@ static int attest_cmd(struct slash *slash)
     return env_rc == 0 ? SLASH_SUCCESS : SLASH_EIO;
 }
 slash_command(attest, attest_cmd,
-              "--emit | --sign <keyfile> | --verify <pubkey> <signed.json>",
-              "Emit, sign, or verify an attestation manifest");
+              "--emit | --sign <keyfile> | --verify <pubkey> <signed.json> "
+              "| --remote <node>",
+              "Emit, sign, verify, or fetch a remote attestation manifest");
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
 /* csh APM ABI handshake. v10 matches current csh master (see
@@ -616,5 +654,22 @@ int libmain(void)
 
 int csh_attest_init(void)
 {
+#ifdef __linux__
+    /*
+     * Spawn the bird-side CSP listener thread that answers `attest --remote`
+     * requests. Pre-condition: csh has called csp_init() + brought up the
+     * router. Production csh does this; standalone unit tests that exercise
+     * apm_init() must do the same setup before calling us (see
+     * tests/test_init.c::main_setup_csp).
+     *
+     * Returns non-zero on pthread_create failure — caller (libmain → csh)
+     * treats that as fatal and aborts the load, which is the right call:
+     * a half-initialized APM that registered slash commands but can't serve
+     * --remote is worse than no APM at all.
+     */
+    if (attest_csp_server_start() != 0) {
+        return -1;
+    }
+#endif
     return 0;
 }

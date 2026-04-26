@@ -77,6 +77,15 @@ csh_attest_sources = [
     'src/sign.c',
 ]
 
+# CSP transport sources (bird-side server + ground-side client) compile only
+# on Linux. macOS dev builds skip them — libcsp's POSIX driver doesn't
+# compile under darwin clang -Werror. The corresponding code in
+# csh_attest.c is gated on `#ifdef __linux__`.
+csh_attest_csp_sources = [
+    'src/csp_server.c',
+    'src/csp_client.c',
+]
+
 # libsodium provides crypto_sign_detached (Ed25519) and crypto_hash_sha256
 # with auto-detected ARMv8 Crypto Extensions (~10× speedup on Cortex-A53/A55,
 # per design doc 4A). Available as a system package on every Linux distro we
@@ -137,9 +146,14 @@ if is_linux
     csh_attest_deps += csp_dep
 endif
 
+csh_attest_all_sources = csh_attest_sources
+if is_linux
+    csh_attest_all_sources += csh_attest_csp_sources
+endif
+
 csh_attest_lib = shared_library(
     'csh_attest',
-    csh_attest_sources,
+    csh_attest_all_sources,
     include_directories: csh_attest_inc,
     dependencies: csh_attest_deps,
     install: true,
