@@ -3,6 +3,8 @@ test_init = executable(
     'test_init.c',
     '../src/csh_attest.c',
     '../src/attest.c',
+    '../src/diff.c',
+    '../src/diff_render.c',
     '../src/jcs.c',
     '../src/jcs_parse.c',
     '../src/sign.c',
