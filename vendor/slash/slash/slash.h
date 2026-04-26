@@ -21,6 +21,11 @@
  * already-loaded slash at dlopen time.
  *
  * Reference: https://github.com/spaceinventor/slash include/slash/slash.h.
+ *
+ * Path: `vendor/slash/slash/slash.h`. The `slash/` subdirectory mirrors
+ * upstream's include layout so apm_csh's `#include <slash/slash.h>` and
+ * `#include <slash/optparse.h>` (the latter a minimal stub in the same
+ * directory) both resolve via `-Ivendor/slash`.
  */
 
 #include <stddef.h>

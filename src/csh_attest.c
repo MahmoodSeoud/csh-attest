@@ -5,23 +5,29 @@
  * `libmain(void)` (int), and optionally `libinfo(void)`. The csh loader
  * dlsym's all three; libmain is what runs on apm load.
  *
- * Session 2 contract: a hand-rolled libmain that walks the `slash` ELF
- * section (populated by slash_command(...) macros) and registers each entry
- * via slash_list_add(), resolved at dlopen time against csh's process. This
- * mirrors what upstream libapm_csh::libmain does, minus the param/vmem
- * sections and minus apm_csh's transitive libparam+libcsp dep tree (deferred
- * to a later session). The walker is ~15 lines and gets deleted when apm_csh
- * is properly wired.
+ * Linux: `apm_init_version` and `libmain` come from upstream libapm_csh
+ * (subprojects/apm_csh.wrap, linked via .as_link_whole()). Its libmain
+ * walks the `slash` / `param` / `vmem` ELF sections and finally calls our
+ * weak `apm_init()` hook. We only have a `slash` section, so the param /
+ * vmem walks short-circuit at runtime via the upstream's
+ * `&__start_X != &__stop_X` guards.
+ *
+ * macOS dev builds skip libcsp + libapm_csh (libcsp's POSIX driver doesn't
+ * compile under darwin clang -Werror). For compile-check parity we provide
+ * a minimal `apm_init_version` + `libmain` shell at the bottom of this file
+ * gated `#ifndef __linux__`. macOS isn't a load target, so the shell never
+ * runs in production.
  *
  * Layout / responsibilities:
- *   - apm_init_version: ABI handshake (10, current csh master).
- *   - libmain():        register slash commands, then call apm_init().
  *   - apm_init():       startup work hook — heap precheck (4B), session-dir
  *                       tmpfs check (4C), CSP listener spawn. Currently
  *                       delegates to csh_attest_init() for testability.
- *   - libinfo():        APM banner shown by `apm info`.
- *   - hello_cmd():      session-1 liveness command, replaced by attest /
- *                       attest-diff in session 3.
+ *                       Strong def here overrides apm_csh's weak hidden
+ *                       forward decl in <apm/apm.h>.
+ *   - libinfo():        APM banner shown by `apm info`. Not part of the
+ *                       upstream apm_csh surface — csh dlsym's it directly.
+ *   - hello_cmd():      session-1 liveness command, kept alongside attest /
+ *                       attest-diff for `apm info` style smoke tests.
  */
 
 #include "csh_attest.h"
@@ -334,7 +340,7 @@ cleanup:
 }
 
 #ifdef CSH_ATTEST_HAVE_SLASH
-#include <slash.h>
+#include <slash/slash.h>
 
 static int hello_cmd(struct slash *slash)
 {
@@ -588,10 +594,6 @@ slash_command(attest, attest_cmd,
               "Emit, sign, verify, or fetch a remote attestation manifest");
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
-/* csh APM ABI handshake. v10 matches current csh master (see
- * spaceinventor/libapm_csh include/apm/csh_api.h:30). */
-const int apm_init_version = 10;
-
 /*
  * APM banner shown by `apm info`. csh's loader dlsym's this; missing is
  * tolerated, present overrides the default banner.
@@ -599,12 +601,16 @@ const int apm_init_version = 10;
 void libinfo(void);
 void libinfo(void)
 {
-    printf("csh-attest 0.1.0 — read-only attestation APM\n");
+    printf("csh-attest 0.2.0 — read-only attestation APM\n");
 }
 
 /*
- * apm_init hook called by libmain after slash command registration.
- * Returning non-zero aborts the load (csh exit(1)).
+ * apm_init hook. On Linux, libapm_csh's libmain calls this after walking
+ * the slash/param/vmem sections. On macOS our local libmain shell (below)
+ * calls it directly. Returning non-zero aborts the load (csh exit(1)).
+ *
+ * apm_csh declares `apm_init` as `__attribute__((weak, visibility("hidden")))`
+ * in <apm/apm.h>; this strong definition overrides it.
  */
 int apm_init(void);
 int apm_init(void)
@@ -612,45 +618,24 @@ int apm_init(void)
     return csh_attest_init();
 }
 
-#ifdef CSH_ATTEST_HAVE_SLASH
+#ifndef __linux__
 /*
- * slash_list_add is exported by csh (which links slash). We declare it weak
- * here so the cmocka unit test (which does not link slash) still compiles —
- * libmain itself is not exercised by tests.
+ * macOS dev-build APM ABI shell. On Linux these come from libapm_csh's
+ * static lib via .as_link_whole(); macOS doesn't link apm_csh (libcsp
+ * doesn't compile there) so we provide a minimal stand-in for the
+ * compile-check build. macOS is not a load target — this never runs.
+ *
+ * v10 matches current csh master (see spaceinventor/libapm_csh
+ * include/apm/csh_api.h:30 → APM_INIT_VERSION).
  */
-__attribute__((weak)) extern int slash_list_add(struct slash_command *cmd);
-#endif
+const int apm_init_version = 10;
 
 int libmain(void);
 int libmain(void)
 {
-#ifdef CSH_ATTEST_HAVE_SLASH
-    /*
-     * The slash_command(...) macros emit `const struct slash_command` entries
-     * into the ELF section "slash". The linker provides __start_slash and
-     * __stop_slash bracket symbols; weak so a slash-less build still resolves.
-     */
-    extern struct slash_command __start_slash
-        __attribute__((visibility("hidden"), weak));
-    extern struct slash_command __stop_slash
-        __attribute__((visibility("hidden"), weak));
-
-    if (slash_list_add != NULL && (&__start_slash != &__stop_slash)) {
-        for (struct slash_command *cmd = &__start_slash; cmd < &__stop_slash;
-             cmd++) {
-            int res = slash_list_add(cmd);
-            if (res < 0) {
-                fprintf(stderr,
-                        "csh-attest: slash_list_add failed for \"%s\" (%d)\n",
-                        cmd->name, res);
-                return res;
-            }
-        }
-    }
-#endif /* CSH_ATTEST_HAVE_SLASH */
-
     return apm_init();
 }
+#endif /* !__linux__ */
 
 int csh_attest_init(void)
 {

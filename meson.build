@@ -91,9 +91,17 @@ csh_attest_sources = [
 # on Linux. macOS dev builds skip them — libcsp's POSIX driver doesn't
 # compile under darwin clang -Werror. The corresponding code in
 # csh_attest.c is gated on `#ifdef __linux__`.
+#
+# apm_link_stubs.c provides a weak no-op `vmem_add` so the .so links under
+# `-Wl,--no-undefined` (meson's default for shared_library on Linux).
+# libapm_csh::libmain references vmem_add unconditionally; the runtime
+# guard short-circuits because we have no vmem section, but the linker
+# can't see that. Production csh provides the real symbol; our weak stub
+# is never called.
 csh_attest_csp_sources = [
     'src/csp_server.c',
     'src/csp_client.c',
+    'src/apm_link_stubs.c',
 ]
 
 # libsodium provides crypto_sign_detached (Ed25519) and crypto_hash_sha256
@@ -104,14 +112,27 @@ sodium_dep = dependency('libsodium', required: true)
 
 csh_attest_inc = include_directories('src', 'src/adapters')
 
-# slash is vendored under vendor/slash. Upstream spaceinventor/slash's
-# library code uses Linux-only headers (PATH_MAX, DT_DIR) without including
-# them, so it fails to build under -Werror on Ubuntu. We never need that
-# code at runtime — only the struct shape + macro for the ELF section emit.
+# slash is vendored under vendor/slash with the upstream layout
+# `vendor/slash/slash/{slash.h,optparse.h}` so apm_csh's
+# `#include <slash/slash.h>` and `<slash/optparse.h>` both resolve via the
+# single -I flag. Upstream spaceinventor/slash's library code uses
+# Linux-only headers (PATH_MAX, DT_DIR) without including them, so it
+# fails to build under -Werror on Ubuntu. We never need that code at
+# runtime — only the struct shape + macro for the ELF section emit.
 # slash_list_add and friends resolve at dlopen time against csh's loaded
-# slash. See vendor/slash/slash.h for the full rationale.
+# slash. See vendor/slash/slash/slash.h for the full rationale.
+#
+# vendor/apm_csh_compat carries minimal stubs for symbols apm_csh's
+# src/apm.c references but doesn't get headers for in our config (no
+# libparam → no transitive vmem.h). Currently just `vmem/vmem.h` with a
+# vmem_t forward decl + vmem_add prototype. Bundled into the same
+# declared dep so apm_csh's `dependency('slash', ...).partial_dependency(
+# includes: true)` picks up both directories.
 slash_inc = include_directories('vendor/slash')
-slash_dep = declare_dependency(include_directories: slash_inc)
+apm_csh_compat_inc = include_directories('vendor/apm_csh_compat')
+slash_dep = declare_dependency(
+    include_directories: [slash_inc, apm_csh_compat_inc],
+)
 
 # Make our vendored slash the resolution target for any subproject that does
 # `dependency('slash', fallback: ['slash', 'slash_dep'], required: false)`.
@@ -127,11 +148,20 @@ meson.override_dependency('slash', slash_dep)
 # macOS keeps the no-CSP dev build via the `is_linux` gate below; the
 # unit-test paths that don't require CSP still run there.
 #
-# libapm_csh (subprojects/apm_csh.wrap) is referenced from step 2 onward —
-# its libmain conflicts with our hand-rolled walker until that swap lands,
-# so we hold off declaring the dependency in step 1.
+# libapm_csh (subprojects/apm_csh.wrap) provides the upstream-compatible
+# libmain that walks the slash / param / vmem ELF sections and finally
+# invokes our weak `apm_init()` hook. Linked via .as_link_whole() so its
+# libmain (which appears unused before dlopen) survives stripping. Its
+# transitive header deps (csp / param / slash) are partial — headers only,
+# no link — so we don't have to add libparam too. macOS skips this dep and
+# uses the minimal local libmain shell at the bottom of csh_attest.c.
 if is_linux
     csp_dep = dependency('csp', fallback: ['csp', 'csp_dep'], required: true)
+    apm_csh_dep = dependency(
+        'apm_csh',
+        fallback: ['apm_csh', 'apm_csh_dep'],
+        required: true,
+    )
 endif
 
 if is_linux
@@ -151,9 +181,11 @@ endif
 # match.
 csh_attest_deps = [slash_dep, sodium_dep]
 if is_linux
-    # Includes the CSP transport surface that the attest --remote command
-    # builds on top of (sessions 9+). Linux-only; macOS dev builds skip CSP.
+    # CSP transport for `attest --remote` (sessions 9+) and libapm_csh's
+    # upstream libmain (session 11 swap). Both Linux-only; macOS dev builds
+    # skip CSP and use the minimal local libmain shell in csh_attest.c.
     csh_attest_deps += csp_dep
+    csh_attest_deps += apm_csh_dep
 endif
 
 csh_attest_all_sources = csh_attest_sources

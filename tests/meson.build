@@ -20,8 +20,15 @@ if is_linux
     csh_attest_test_sources += [
         '../src/csp_server.c',
         '../src/csp_client.c',
+        # Same weak vmem_add stub the .so uses — see meson.build for why.
+        # Test binaries also pull in apm_csh_dep via .as_link_whole(), so
+        # they need vmem_add resolved at link time too.
+        '../src/apm_link_stubs.c',
     ]
     csh_attest_test_deps += csp_dep
+    # Same upstream libmain that csh_attest_lib links — keeps the test build
+    # exercising the same dispatch path the production .so does.
+    csh_attest_test_deps += apm_csh_dep
 endif
 
 test_init = executable(

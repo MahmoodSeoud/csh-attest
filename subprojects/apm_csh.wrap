@@ -2,6 +2,7 @@
 url = https://github.com/spaceinventor/libapm_csh.git
 revision = 196dc70d313f955032d8d16970fd0f04bd1a199b
 depth = 1
+diff_files = apm_csh-vmem-include.diff
 
 # libapm_csh provides the upstream-compatible libmain that walks the slash /
 # param / vmem ELF sections and finally calls our weak `apm_init()` hook.
@@ -12,6 +13,14 @@ depth = 1
 # header in vendor/slash. We do NOT need libparam right now: without
 # APM_HAVE_PARAM defined (which requires the libparam fallback to resolve),
 # the param-walking code in src/apm.c compiles out cleanly.
+#
+# diff_files: upstream apm.c uses `vmem_t` and calls `vmem_add` in libmain
+# unconditionally — but its `<vmem/vmem.h>` include lives inside the
+# APM_HAVE_PARAM gate. Without libparam we hit
+# `-Werror=implicit-function-declaration` on every Linux job. The patch
+# adds a single guarded include so apm.c picks up the compat declarations
+# from `vendor/apm_csh_compat/vmem/vmem.h`. Drop the patch when this is
+# fixed upstream (or when we add a real libparam dep).
 #
 # Pinned at 2026-02-13 — last commit before our session 9 plumbing landed.
 

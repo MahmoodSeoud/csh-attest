@@ -11,5 +11,9 @@ subprojects/packagecache/
 subprojects/*/
 subprojects/.wraplock
 !subprojects/*.wrap
+# Patches consumed by .wrap files via diff_files. Tracked so CI fetches
+# the same patched source we test locally.
+!subprojects/packagefiles/
+!subprojects/packagefiles/**
 keys/*.key
 keys/*.priv
