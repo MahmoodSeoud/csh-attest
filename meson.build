@@ -8,6 +8,20 @@ project(
         'warning_level=3',
         'werror=true',
         'b_ndebug=if-release',
+        # libcsp tuning. Defaults are tuned for tiny embedded targets — too
+        # small for a 32 KB attestation manifest. Mirrors dipp-apm's pinned
+        # values so the FlatSat ↔ bird ABI stays consistent within the
+        # DISCO-2 mission's CSP fabric.
+        # buffer_size: bytes per CSP packet. 2048 lets a typical manifest
+        #   (~2-4 KB once we drop modules.list lines) fit in 1-2 packets.
+        # use_rdp:     reliable datagram (retransmit + ordering) — required
+        #   so the ground side gets a complete manifest even on a lossy link.
+        # have_stdio:  enables csp_print() to actually print, which the
+        #   sample CSP loopback harness uses for setup-time diagnostics.
+        'csp:buffer_size=2048',
+        'csp:buffer_count=15',
+        'csp:use_rdp=true',
+        'csp:have_stdio=true',
     ],
 )
 
@@ -72,6 +86,28 @@ csh_attest_inc = include_directories('src', 'src/adapters')
 # slash. See vendor/slash/slash.h for the full rationale.
 slash_inc = include_directories('vendor/slash')
 slash_dep = declare_dependency(include_directories: slash_inc)
+
+# Make our vendored slash the resolution target for any subproject that does
+# `dependency('slash', fallback: ['slash', 'slash_dep'], required: false)`.
+# libapm_csh does exactly that — without this override its `dependency()`
+# call would fail to find slash, APM_HAVE_SLASH would stay unset, and its
+# libmain would compile out the slash-section walker that registers our
+# attest / attest-diff / hello commands. Override gives libapm_csh the
+# headers it needs without us having to add a third .wrap file.
+meson.override_dependency('slash', slash_dep)
+
+# libcsp subproject (per subprojects/csp.wrap). Linux-only for now — libcsp's
+# POSIX driver doesn't compile on macOS clang under our -Werror policy.
+# macOS keeps the no-CSP dev build via the `is_linux` gate below; the
+# unit-test paths that don't require CSP still run there.
+#
+# libapm_csh (subprojects/apm_csh.wrap) is referenced from step 2 onward —
+# its libmain conflicts with our hand-rolled walker until that swap lands,
+# so we hold off declaring the dependency in step 1.
+if is_linux
+    csp_dep = dependency('csp', fallback: ['csp', 'csp_dep'], required: true)
+endif
+
 if is_linux
     add_project_arguments('-DCSH_ATTEST_HAVE_SLASH=1', language: 'c')
     # macOS exposes O_CLOEXEC, fileno, isatty, open_memstream, mkstemp, etc.
@@ -87,11 +123,18 @@ endif
 # csh discovers APMs by `libcsh_*` prefix + `.so` suffix (see
 # spaceinventor/csh/src/slash_apm.c::file_callback). The output basename must
 # match.
+csh_attest_deps = [slash_dep, sodium_dep]
+if is_linux
+    # Includes the CSP transport surface that the attest --remote command
+    # builds on top of (sessions 9+). Linux-only; macOS dev builds skip CSP.
+    csh_attest_deps += csp_dep
+endif
+
 csh_attest_lib = shared_library(
     'csh_attest',
     csh_attest_sources,
     include_directories: csh_attest_inc,
-    dependencies: [slash_dep, sodium_dep],
+    dependencies: csh_attest_deps,
     install: true,
     install_dir: get_option('libdir') / 'csh',
 )

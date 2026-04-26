@@ -1,0 +1,19 @@
+[wrap-git]
+url = https://github.com/spaceinventor/libapm_csh.git
+revision = 196dc70d313f955032d8d16970fd0f04bd1a199b
+depth = 1
+
+# libapm_csh provides the upstream-compatible libmain that walks the slash /
+# param / vmem ELF sections and finally calls our weak `apm_init()` hook.
+#
+# Its three header-only deps (csp, param, slash) are all `partial_dependency
+# (links: false, includes: true)` — meaning libapm_csh only needs HEADERS at
+# compile time. We pass csp via subproject (above) and slash via the vendored
+# header in vendor/slash. We do NOT need libparam right now: without
+# APM_HAVE_PARAM defined (which requires the libparam fallback to resolve),
+# the param-walking code in src/apm.c compiles out cleanly.
+#
+# Pinned at 2026-02-13 — last commit before our session 9 plumbing landed.
+
+[provide]
+apm_csh = apm_csh_dep
