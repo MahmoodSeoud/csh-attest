@@ -7,6 +7,37 @@
 
 #include "csh_attest.h"
 
+#ifdef __linux__
+/*
+ * apm_init() / libmain() spawn the CSP server thread on Linux, which calls
+ * csp_bind(). Without prior csp_init() that's a null-deref. We initialize
+ * CSP once in main() before driving the suite — same contract csh enforces
+ * in production (host calls csp_init before loading APMs).
+ */
+#include <pthread.h>
+#include <csp/csp.h>
+
+static void *router_thread(void *unused)
+{
+    (void)unused;
+    while (1) {
+        csp_route_work();
+    }
+    return NULL;
+}
+
+static void test_csp_bring_up(void)
+{
+    csp_init();
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&tid, &attr, router_thread, NULL);
+    pthread_attr_destroy(&attr);
+}
+#endif
+
 /*
  * libmain() is the dlopen entry point csh calls. We exercise it directly
  * here. Forward-declared instead of pulled from a public header — it is
@@ -108,6 +139,10 @@ static void test_libmain_returns_zero_without_slash(void **state)
 
 int main(void)
 {
+#ifdef __linux__
+    test_csp_bring_up();
+#endif
+
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_csh_attest_init_returns_zero),
         cmocka_unit_test(test_apm_init_returns_zero),

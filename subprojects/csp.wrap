@@ -1,0 +1,16 @@
+[wrap-git]
+url = https://github.com/spaceinventor/libcsp.git
+revision = 4352143edba2af45afeb32d5b62ea5746b93a26a
+depth = 1
+
+# Why spaceinventor/libcsp and not libcsp/libcsp:
+# - The Space Inventor fork carries the v1 wire format the bird OBC actually
+#   speaks. Upstream libcsp/libcsp's master is on v2 by default.
+# - This is the same revision dipp-apm vendors via git submodule, so the
+#   ABI csh-attest sees on the FlatSat matches the ABI on the bird.
+#
+# Pinned at the 2026-04-20 commit so a `meson setup` years from now still
+# resolves to the same byte-identical libcsp binaries.
+
+[provide]
+csp = csp_dep

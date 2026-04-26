@@ -22,17 +22,25 @@ License: Apache-2.0.
 
 ```bash
 # 1. Build the APM. Needs meson, ninja, libsodium-dev, libcmocka-dev.
+#    On first run meson fetches the libcsp + libapm_csh subprojects.
 meson setup build && meson compile -C build
 
 # 2. Boot csh with the APM auto-loaded.
 csh -i init/attest.csh
 
-# 3. Inside csh — emit, sign, diff, verify.
+# 3. Inside csh — emit, sign, verify, diff, fetch from a remote bird.
 csh> attest --emit                                  > flatsat.json
 csh> attest --sign keys/mission.sec                 > flatsat.signed.json
 csh> attest --verify keys/mission.pub flatsat.signed.json
+csh> attest --remote 0                              > bird.json   # self-loop demo
 csh> attest-diff flatsat.json bird.json
 ```
+
+(`attest --remote 0` exercises the full CSP transport against the loopback
+interface inside the same csh process — it's the demo path that proves the
+plumbing on a single host. A real FlatSat ↔ bird call uses the bird's CSP
+node id and requires routing configured between the two hosts; see the
+`attest --remote <node>` section below.)
 
 > Prebuilt `.so` artifacts for Linux x86_64 / arm64 / armv7 are planned for
 > tagged releases via GitHub Releases. Until then, build from source — every
@@ -85,18 +93,24 @@ $ attest-diff flatsat.json bird.json
 DRIFT: 2 of 5 fields divergent. Exit code: 1.
 ```
 
+### `attest --remote <node>`
+
+Fetches a manifest from a remote bird over libcsp. The bird's csh-attest
+APM listens on CSP port `100` (configurable in a future minor bump);
+ground side connects, the bird walks its introspection table, and the
+canonical manifest streams back length-prefixed. Single-pass operation
+for now — pass-boundary resume via libdtp is deferred.
+
 ## CI integration
 
 The exit-code contract makes the tool drop-in for shell-driven gates:
 
 ```bash
 # Block a merge if FlatSat drifts from a sealed expected manifest.
-csh -c "attest-diff expected.json <(attest --remote bird --json)" \
+# $BIRD is the CSP node id of the target bird (an integer 0..16383).
+csh -c "attest-diff expected.json <(attest --remote $BIRD)" \
     || exit 1
 ```
-
-(The `attest --remote` transport over libdtp is session 9+; for now use
-`attest --emit` on each side and copy the manifest to the diffing host.)
 
 ## Layout
 

@@ -56,8 +56,12 @@ jobs:
       - name: install build deps (alpine)
         if: ${{ matrix.container != '' }}
         run: |
-          apk add --no-cache build-base meson ninja pkgconfig \
-            cmocka-dev libsodium-dev
+          # linux-headers: libcsp's src/drivers/eth/eth_linux.c needs
+          #   <linux/if_packet.h>, not in Alpine musl by default.
+          # git: meson's wrap-git fetcher needs git in PATH for subproject
+          #   downloads (already installed pre-checkout but ensures parity).
+          apk add --no-cache build-base meson ninja pkgconfig git \
+            linux-headers cmocka-dev libsodium-dev
 
       - name: meson setup
         run: meson setup build

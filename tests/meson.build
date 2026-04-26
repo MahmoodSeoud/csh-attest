@@ -1,6 +1,8 @@
-test_init = executable(
-    'test_init',
-    'test_init.c',
+# Source list common to the three test binaries that link csh_attest.c
+# (test_init, test_diff, test_verify). On Linux this also pulls in the
+# CSP server + client TUs that csh_attest.c references via #ifdef __linux__;
+# without them the tests would fail to link.
+csh_attest_test_sources = [
     '../src/csh_attest.c',
     '../src/attest.c',
     '../src/adapters/kernel_build_id.c',
@@ -12,8 +14,22 @@ test_init = executable(
     '../src/jcs.c',
     '../src/jcs_parse.c',
     '../src/sign.c',
+]
+csh_attest_test_deps = [cmocka_dep, sodium_dep]
+if is_linux
+    csh_attest_test_sources += [
+        '../src/csp_server.c',
+        '../src/csp_client.c',
+    ]
+    csh_attest_test_deps += csp_dep
+endif
+
+test_init = executable(
+    'test_init',
+    'test_init.c',
+    csh_attest_test_sources,
     include_directories: [csh_attest_inc, slash_inc],
-    dependencies: [cmocka_dep, sodium_dep],
+    dependencies: csh_attest_test_deps,
     install: false,
 )
 
@@ -71,19 +87,9 @@ test('jcs_parse', test_jcs_parse)
 test_diff = executable(
     'test_diff',
     'test_diff.c',
-    '../src/csh_attest.c',
-    '../src/attest.c',
-    '../src/adapters/kernel_build_id.c',
-    '../src/adapters/kernel_uname.c',
-    '../src/adapters/modules_list.c',
-    '../src/adapters/etc_merkle.c',
-    '../src/diff.c',
-    '../src/diff_render.c',
-    '../src/jcs.c',
-    '../src/jcs_parse.c',
-    '../src/sign.c',
+    csh_attest_test_sources,
     include_directories: [csh_attest_inc, slash_inc],
-    dependencies: [cmocka_dep, sodium_dep],
+    dependencies: csh_attest_test_deps,
     install: false,
 )
 
@@ -163,20 +169,28 @@ test('sign', test_sign)
 test_verify = executable(
     'test_verify',
     'test_verify.c',
-    '../src/csh_attest.c',
-    '../src/attest.c',
-    '../src/adapters/kernel_build_id.c',
-    '../src/adapters/kernel_uname.c',
-    '../src/adapters/modules_list.c',
-    '../src/adapters/etc_merkle.c',
-    '../src/diff.c',
-    '../src/diff_render.c',
-    '../src/jcs.c',
-    '../src/jcs_parse.c',
-    '../src/sign.c',
+    csh_attest_test_sources,
     include_directories: [csh_attest_inc, slash_inc],
-    dependencies: [cmocka_dep, sodium_dep],
+    dependencies: csh_attest_test_deps,
     install: false,
 )
 
 test('verify', test_verify)
+
+# End-to-end loopback integration test: brings up CSP + the bird-side
+# listener thread, then drives attest_remote_run from the same process
+# through libcsp's loopback interface. Linux-only — libcsp doesn't build
+# on macOS, and the test depends on the same TUs csh_attest.c does on
+# Linux (csp_server.c, csp_client.c).
+if is_linux
+    test_remote = executable(
+        'test_remote',
+        'test_remote.c',
+        csh_attest_test_sources,
+        include_directories: [csh_attest_inc, slash_inc],
+        dependencies: csh_attest_test_deps,
+        install: false,
+    )
+
+    test('remote', test_remote)
+endif
