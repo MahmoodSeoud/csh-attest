@@ -1,0 +1,15 @@
+build/
+build-*/
+.cache/
+.DS_Store
+*.swp
+*.o
+*.so
+*.so.*
+compile_commands.json
+subprojects/packagecache/
+subprojects/*/
+subprojects/.wraplock
+!subprojects/*.wrap
+keys/*.key
+keys/*.priv

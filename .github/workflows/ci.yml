@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # 4-flavor matrix per design doc 1E:
+  #   (Ubuntu LTS glibc, Alpine musl) x (x86_64, arm64).
+  # Production target is Yocto via meta-csh-attest (1G, separate workflow).
+  build:
+    name: build (${{ matrix.os }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            runner: ubuntu-22.04
+            container: ''
+          - os: ubuntu-22.04
+            arch: arm64
+            runner: ubuntu-22.04-arm
+            container: ''
+          - os: alpine-3.19
+            arch: x86_64
+            runner: ubuntu-22.04
+            container: alpine:3.19
+          - os: alpine-3.19
+            arch: arm64
+            runner: ubuntu-22.04-arm
+            container: alpine:3.19
+    container: ${{ matrix.container }}
+    steps:
+      # Alpine: actions/checkout@v4 needs git pre-installed in the container.
+      # Done before checkout for that reason.
+      - name: install pre-checkout deps (alpine)
+        if: ${{ matrix.container != '' }}
+        run: apk add --no-cache git
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: install build deps (debian/ubuntu)
+        if: ${{ matrix.container == '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential meson ninja-build pkg-config libcmocka-dev
+
+      - name: install build deps (alpine)
+        if: ${{ matrix.container != '' }}
+        run: |
+          apk add --no-cache build-base meson ninja pkgconfig cmocka-dev
+
+      - name: meson setup
+        run: meson setup build
+
+      - name: meson compile
+        run: meson compile -C build
+
+      - name: meson test
+        run: meson test -C build --print-errorlogs
+
+      # Sanity check that the slash_command struct landed in the `slash` ELF
+      # section. csh's libmain walks this section to register commands; if the
+      # section is missing the APM is a no-op even if it loads cleanly.
+      - name: verify slash section present
+        run: |
+          if command -v readelf >/dev/null 2>&1; then
+            readelf -S build/libcsh_attest.so | grep -q ' slash ' \
+              || (echo "ERROR: 'slash' section missing from libcsh_attest.so" && exit 1)
+          else
+            objdump -h build/libcsh_attest.so | grep -q ' slash ' \
+              || (echo "ERROR: 'slash' section missing from libcsh_attest.so" && exit 1)
+          fi
