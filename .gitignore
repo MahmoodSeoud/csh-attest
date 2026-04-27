@@ -18,3 +18,4 @@ subprojects/.wraplock
 !subprojects/packagefiles/**
 keys/*.key
 keys/*.priv
+.gstack/

@@ -1,0 +1,75 @@
+name: Bug report
+description: Something does not behave as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For sig-validation bypasses, key-loading flaws, or anything affecting
+        the integrity contract: do not file here. See
+        [SECURITY.md](https://github.com/MahmoodSeoud/csh-attest/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: csh-attest version
+      description: Output of `cat VERSION` or the git SHA you built from.
+      placeholder: 0.3.1 (or 32f7bc2)
+    validations:
+      required: true
+
+  - type: input
+    id: csh-version
+    attributes:
+      label: csh version
+      description: Output of `csh --version` (the spaceinventor binary, not Berkeley).
+      placeholder: spaceinventor/csh @ <sha>
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target OS
+      options:
+        - Ubuntu 22.04 x86_64
+        - Ubuntu 22.04 arm64
+        - Alpine 3.19 x86_64
+        - Other Linux glibc
+        - Other Linux musl
+        - macOS (compile-check only)
+        - Yocto / embedded
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Exact commands, including environment vars (ATTEST_CSP_PORT, etc.)
+      render: bash
+      placeholder: |
+        export ATTEST_CSP_PORT=37
+        meson setup build && meson compile -C build
+        csh -c "attest --remote 0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      placeholder: |
+        Expected: signed manifest on stdout, exit 0
+        Actual: empty stdout, exit 3, stderr "csh-attest: E101: ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: stderr
+    attributes:
+      label: Full stderr
+      description: Paste verbatim. Error codes (E001/E101/etc.) are in our reference; see the README "Error codes" section.
+      render: text
+    validations:
+      required: false

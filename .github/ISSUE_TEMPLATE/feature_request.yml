@@ -1,0 +1,58 @@
+name: Feature request
+description: Propose a new manifest field, command, or knob
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For changes that touch the manifest shape, JCS canonicalization, or
+        the signing envelope, an issue is **required** before you send a PR.
+        See [CONTRIBUTING.md](https://github.com/MahmoodSeoud/csh-attest/blob/main/CONTRIBUTING.md).
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+      description: One paragraph. Concrete operator or mission-engineer scenario.
+      placeholder: |
+        Operators running multi-bird constellations want to identify which
+        flight-software branch a bird is running, so a drift in build SHA
+        across the constellation is loud.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - New manifest field (adapter)
+        - New command / subcommand
+        - New runtime knob (env var)
+        - Wire-protocol change (REQUIRES discussion)
+        - Doc / DX improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: API surface, manifest key name, env-var name, etc.
+      render: text
+      placeholder: |
+        Field key:    "build.git_sha"
+        Type:         string (40-hex)
+        Determinism:  STABLE
+        Source:       embedded as ELF .note.git_sha during firmware build
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you considered and rejected
+      description: Helps reviewers see the tradeoff.
+    validations:
+      required: false

@@ -63,7 +63,12 @@ static int load_file(const char *path, uint8_t **out_bytes, size_t *out_len,
 {
     FILE *f = fopen(path, "rb");
     if (f == NULL) {
-        fprintf(err, "csh-attest: E001: cannot open: %s\n", path);
+        fprintf(err,
+                "csh-attest: E001: cannot open: %s\n"
+                "  cause: file does not exist or is not readable by this user\n"
+                "  fix:   check the path; if the file is owned by another user, "
+                "run with the right uid or chmod\n",
+                path);
         return -1;
     }
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -175,7 +180,12 @@ int attest_verify_run(int argc, char **argv, FILE *out, FILE *err)
     int load_rc = attest_sign_load_public_key(pubkey_path, pubkey);
     if (load_rc != ATTEST_SIGN_OK) {
         fprintf(err,
-                "csh-attest: E203: cannot load public key: %s\n", pubkey_path);
+                "csh-attest: E203: cannot load public key: %s\n"
+                "  cause: file is missing, unreadable, or not exactly %u "
+                "raw bytes\n"
+                "  fix:   keys/<name>.pub must be the 32-byte Ed25519 public "
+                "half of the keypair you signed with\n",
+                pubkey_path, ATTEST_SIGN_PUBLIC_KEY_BYTES);
         return 2;
     }
 
@@ -515,10 +525,24 @@ static int attest_cmd(struct slash *slash)
     uint8_t secret_key[ATTEST_SIGN_SECRET_KEY_BYTES];
     int load_rc = attest_sign_load_secret_key(sign_key_path, secret_key);
     if (load_rc != ATTEST_SIGN_OK) {
-        const char *msg = (load_rc == ATTEST_SIGN_ERR_KEY_PERMS)
-            ? "E202: private key file is world/group readable"
-            : "E203: private key file malformed or unreadable";
-        fprintf(stderr, "csh-attest: %s: %s\n", msg, sign_key_path);
+        if (load_rc == ATTEST_SIGN_ERR_KEY_PERMS) {
+            fprintf(stderr,
+                    "csh-attest: E202: private key file world/group-readable: "
+                    "%s\n"
+                    "  cause: file mode is too permissive (need 0o600 or "
+                    "stricter)\n"
+                    "  fix:   chmod 600 %s\n",
+                    sign_key_path, sign_key_path);
+        } else {
+            fprintf(stderr,
+                    "csh-attest: E203: private key file malformed or "
+                    "unreadable: %s\n"
+                    "  cause: file is missing, unreadable, or not exactly %u "
+                    "raw bytes (libsodium combined seed+public format)\n"
+                    "  fix:   regenerate with the same tool that produced "
+                    "matching keys/<name>.pub\n",
+                    sign_key_path, ATTEST_SIGN_SECRET_KEY_BYTES);
+        }
         jcs_buffer_free(&inner);
         return SLASH_EIO;
     }
@@ -601,7 +625,7 @@ slash_command(attest, attest_cmd,
 void libinfo(void);
 void libinfo(void)
 {
-    printf("csh-attest 0.3.0 — read-only attestation APM\n");
+    printf("csh-attest 0.3.1 — read-only attestation APM\n");
 }
 
 /*
