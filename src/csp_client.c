@@ -89,8 +89,13 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
                                    timeout_ms, CSP_O_NONE);
     if (conn == NULL) {
         fprintf(err,
-                "csh-attest: E101: connect to node %u port %u failed\n",
-                node, port);
+                "csh-attest: E101: connect to node %u port %u failed\n"
+                "  cause: bird unreachable, port mismatch, or libcsp routing "
+                "not configured for this node\n"
+                "  fix:   verify ATTEST_CSP_PORT matches on bird and ground "
+                "(both default 100); confirm with `csp_ping %u`; check the "
+                "router has a route to node %u\n",
+                node, port, node, node);
         return 3;
     }
 

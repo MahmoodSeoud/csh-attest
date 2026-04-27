@@ -4,6 +4,43 @@ All notable changes to csh-attest are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely; the
 schema's own breaking-change policy lives in [SCHEMA.md](./SCHEMA.md).
 
+## 0.3.1 — 2026-04-27
+
+DX patch release. README + error UX hardening surfaced by an end-to-end
+`/devex-review` audit. No code-path or wire-format changes; safe drop-in
+upgrade from 0.3.0.
+
+### Added
+
+- `README.md` — `## Prerequisites` section with the explicit
+  spaceinventor/csh install pointer (the previous quickstart silently
+  failed when `csh` resolved to Berkeley `/bin/csh`, which is the default
+  on macOS and most Linux distros) plus per-distro `apt` / `apk` / `brew`
+  one-liners for the build deps.
+- `README.md` — "Don't have csh installed yet?" pointer to
+  `meson test -C build` as the spaceinventor-free smoke-test path.
+  Closes the "infinite TTHW" cliff for evaluators who want to confirm
+  the build works before installing csh from a separate repo.
+- `README.md` — `## Error codes` reference table covering all 13 codes
+  by family (E0xx I/O, E1xx CSP transport, E2xx crypto, E9xx programmer
+  error) with their shell exit codes. Plus an example `case $?` block
+  showing how to dispatch on exit code in CI runbooks.
+- `CONTRIBUTING.md`, `SECURITY.md`, `.github/PULL_REQUEST_TEMPLATE.md`,
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml`.
+  First pass at the repo's outside-contributor surface; previously
+  empty.
+
+### Changed
+
+- The four highest-frequency error sites (E001 cannot-open, E101
+  connect-failed, E202 key-perms, E203 key-load-failed) now print a
+  three-line `<code+msg>` / `cause: ...` / `fix: ...` form instead of
+  a single line. Stripe-tier error UX. Existing test assertions
+  (`strstr(err, "E001")` etc.) keep passing because the code prefix
+  is unchanged.
+- `libinfo` banner string and `meson.build` package version bumped to
+  `0.3.1`.
+
 ## 0.3.0 — 2026-04-26
 
 Hardening release. The bird-side server and ground-side client now read
@@ -81,6 +118,24 @@ walker that lived in `csh_attest.c` since session 2.
 - libparam-backed knobs (this release uses plain env vars; the
   libparam path lands when we need named-knob discovery from `csh ps`).
 - Hardware bring-up against a real radio.
+
+### Migration from 0.2.0
+
+Soft breaking change for any out-of-tree code that includes
+`src/csp_protocol.h` directly. Two macros were renamed to make room for
+the runtime accessors:
+
+| Before (0.2.0)            | After (0.3.0+)                              |
+|---------------------------|---------------------------------------------|
+| `ATTEST_CSP_PORT`         | `ATTEST_CSP_PORT_DEFAULT` (compile default) |
+|                           | `attest_csp_port()` (runtime; reads env)    |
+| `ATTEST_CSP_TIMEOUT_MS`   | `ATTEST_CSP_TIMEOUT_MS_DEFAULT`             |
+|                           | `attest_csp_timeout_ms()` (runtime)         |
+
+Call the accessor functions in new code so end users get the
+`ATTEST_CSP_PORT` / `ATTEST_CSP_TIMEOUT_MS` env-var override path. Use
+the `*_DEFAULT` macros only for static-init contexts where you genuinely
+need a compile-time constant.
 
 ## 0.2.0 — 2026-04-26
 

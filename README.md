@@ -22,11 +22,23 @@ release history.
 
 License: Apache-2.0.
 
+## Prerequisites
+
+You need [`spaceinventor/csh`](https://github.com/spaceinventor/csh) installed and on your `PATH`. **This is NOT the Berkeley C shell** — `csh --version` should mention Space Inventor / `apm load`. If your `csh` is `tcsh` / Berkeley (`/bin/csh` on macOS and many Linux distros), it'll silently swallow `init/attest.csh` and dump you at a useless C-shell prompt. Build spaceinventor/csh from source per its README before continuing.
+
+Build deps for csh-attest itself: `meson` (≥ 1.0), `ninja`, `libsodium`, `libcmocka`.
+
+| Distro | Install |
+|--------|---------|
+| Ubuntu/Debian | `sudo apt-get install -y meson ninja-build pkg-config libsodium-dev libcmocka-dev` |
+| Alpine        | `apk add --no-cache build-base meson ninja pkgconfig libsodium-dev cmocka-dev linux-headers` |
+| macOS         | `brew install meson ninja pkg-config libsodium cmocka` (compile-check only — see [Targets](#targets)) |
+
 ## 60-second quickstart
 
 ```bash
-# 1. Build the APM. Needs meson, ninja, libsodium-dev, libcmocka-dev.
-#    On first run meson fetches the libcsp + libapm_csh subprojects.
+# 1. Build the APM. On first run meson fetches the libcsp + libapm_csh
+#    subprojects (Linux only; ~30s extra). macOS skips both.
 meson setup build && meson compile -C build
 
 # 2. Boot csh with the APM auto-loaded.
@@ -39,6 +51,8 @@ csh> attest --verify keys/mission.pub flatsat.signed.json
 csh> attest --remote 0                              > bird.json   # self-loop demo
 csh> attest-diff flatsat.json bird.json
 ```
+
+**Don't have `csh` installed yet?** `meson test -C build` runs the cmocka suite — 12 tests covering emit, sign, verify, diff, the libcsp transport, and the runtime knobs. If they all pass, every code path is functional; you just need spaceinventor/csh installed before you can drive them interactively.
 
 (`attest --remote 0` exercises the full CSP transport against the loopback
 interface inside the same csh process — it's the demo path that proves the
@@ -126,6 +140,39 @@ overrides silently fail to connect (`E101`). `ATTEST_CSP_MAGIC` (the
 trigger byte) and `ATTEST_CSP_MAX_PAYLOAD` (linked to libcsp's
 `buffer_size` build option) are intentionally **not** overridable; they
 are protocol- and build-time constants, not configuration.
+
+## Error codes
+
+Every diagnostic is one structured line on stderr (high-frequency ones are
+followed by a `cause:` and `fix:` line). Codes are stable; the exit-code
+column is the shell return value when the command takes the error path.
+
+| Code | Family            | Meaning                                           | Exit |
+|------|-------------------|---------------------------------------------------|------|
+| E001 | I/O / parse       | Cannot open / read / parse file as JCS-canonical  | 2    |
+| E099 | I/O               | (reserved)                                        | —    |
+| E101 | CSP transport     | `csp_connect` to the bird failed                  | 3    |
+| E102 | CSP transport     | Read timed out / short read / empty response      | 3    |
+| E103 | CSP transport     | Out of CSP buffers (libcsp pool exhausted)        | 3    |
+| E104 | CSP transport     | Malformed length-prefix header from the bird      | 3    |
+| E105 | I/O               | File exceeds the 1 MB sanity cap                  | 2    |
+| E201 | crypto / verify   | Ed25519 signature verification failed             | 1    |
+| E202 | crypto / keys     | Secret-key file is world- or group-readable       | 2    |
+| E203 | crypto / keys     | Cannot load public/private key (malformed/short)  | 2    |
+| E204 | crypto / output   | Out of memory while building the signed envelope  | 3    |
+| E205 | crypto / runtime  | libsodium init or signing failure                 | 3    |
+| E901 | programmer error  | Unknown flag, OOM, or short write                 | 2-3  |
+
+CI gates can dispatch on the exit code alone (the message is for humans):
+
+```bash
+csh -c "attest --verify keys/mission.pub flatsat.signed.json"
+case $? in
+  0) ;;                                    # signature valid
+  1) echo "TAMPER DETECTED" >&2; exit 1 ;; # E201 path
+  2) echo "operator error"  >&2; exit 2 ;; # missing file, bad key, parse err
+esac
+```
 
 ## CI integration
 

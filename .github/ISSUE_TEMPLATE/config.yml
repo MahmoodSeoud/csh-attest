@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/MahmoodSeoud/csh-attest/blob/main/SECURITY.md
+    about: Sig-validation bypasses, key-handling flaws, anything that affects the integrity contract — DO NOT file as a public issue. See SECURITY.md.
+  - name: Question about csh itself
+    url: https://github.com/spaceinventor/csh
+    about: csh-attest is an APM. Questions about the csh shell, libcsp routing, or the apm load mechanism belong upstream.
