@@ -55,7 +55,7 @@ static void test_help_documents_env_vars(void **state)
     assert_non_null(strstr(buf, "ATTEST_CSP_TIMEOUT_MS"));
     /* Defaults match the README table — drift here means the help and
      * the README disagree about what the knobs do. */
-    assert_non_null(strstr(buf, "default 100"));
+    assert_non_null(strstr(buf, "default 13"));
     assert_non_null(strstr(buf, "default 5000"));
 }
 

@@ -448,10 +448,24 @@ int jcsp_parse(const uint8_t *bytes, size_t len, struct jcsp_value *out)
         jcsp_value_free(out);
         return -1;
     }
-    if (c.p != c.end) {
-        /* Trailing bytes after a valid top-level value: not canonical. */
-        jcsp_value_free(out);
-        return -1;
+    /* Tolerate one trailing newline-style whitespace run after the
+     * top-level value. JCS canonical form forbids interior whitespace
+     * (still enforced inside parse_value), but transport reliably
+     * appends a trailing '\n' when manifests are written to a Unix file
+     * via stdout redirection (`attest --emit > flatsat.json`). Treating
+     * any trailing whitespace inside the top-level value would relax
+     * canonical-ness; restricting the relaxation to the *outermost*
+     * trailing run keeps signature comparisons byte-stable while making
+     * the quickstart roundtrip work without a pre-strip step.
+     *
+     * Whitespace per RFC 8259 §2: 0x20, 0x09, 0x0A, 0x0D. */
+    while (c.p < c.end) {
+        uint8_t ch = *c.p;
+        if (ch != 0x20 && ch != 0x09 && ch != 0x0A && ch != 0x0D) {
+            jcsp_value_free(out);
+            return -1;
+        }
+        c.p++;
     }
     return 0;
 }

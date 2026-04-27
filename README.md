@@ -15,8 +15,9 @@ deterministic byte-comparable artifact you can commit to a mission repo.
 `v0.3.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
 `kernel.uname`, `modules.list`) plus the `schema_version` envelope,
 `attest --remote <node>` for fetching a signed manifest from a remote
-bird over libcsp, and env-var-overridable port/timeout knobs (see
-[Runtime knobs](#runtime-knobs) below). See [SCHEMA.md](./SCHEMA.md)
+bird over libcsp, env-var-overridable port/timeout knobs (see
+[Runtime knobs](#runtime-knobs) below), and `attest --keygen <prefix>`
+for one-shot Ed25519 keypair provisioning. See [SCHEMA.md](./SCHEMA.md)
 for the breaking-change policy and [CHANGELOG.md](./CHANGELOG.md) for
 release history.
 
@@ -41,10 +42,17 @@ Build deps for csh-attest itself: `meson` (≥ 1.0), `ninja`, `libsodium`, `libc
 #    subprojects (Linux only; ~30s extra). macOS skips both.
 meson setup build && meson compile -C build
 
-# 2. Boot csh with the APM auto-loaded.
+# 2. Boot csh with the APM auto-loaded. The init script first runs
+#    `csp init -d 0` to disable libcsp deduplication for the loopback
+#    --remote demo (csh's CSP_DEDUP_ALL default drops chunked manifest
+#    packets — see init/attest.csh for the full why), then `apm load`s
+#    the .so and registers the slash commands.
 csh -i init/attest.csh
 
-# 3. Inside csh — emit, sign, verify, diff, fetch from a remote bird.
+# 3. Inside csh — generate keys, emit, sign, verify, diff, fetch from
+#    a remote bird. --keygen writes <prefix>.pub (mode 0644) and
+#    <prefix>.sec (mode 0600 — --sign refuses anything looser).
+csh> attest --keygen keys/mission
 csh> attest --emit                                  > flatsat.json
 csh> attest --sign keys/mission.sec                 > flatsat.signed.json
 csh> attest --verify keys/mission.pub flatsat.signed.json
@@ -52,7 +60,27 @@ csh> attest --remote 0                              > bird.json   # self-loop de
 csh> attest-diff flatsat.json bird.json
 ```
 
-**Don't have `csh` installed yet?** `meson test -C build` runs the cmocka suite — 13 tests covering emit, sign, verify, diff, the libcsp transport, the runtime knobs, and the `attest --help` text. If they all pass, every code path is functional; you just need spaceinventor/csh installed before you can drive them interactively.
+**Running non-interactively** (CI gates, scripts, headless boxes): csh's
+slash readline needs a real PTY — piping commands in via `echo … | csh`
+prints `Failed to init slash` and bails. Wrap with `script -qc`:
+
+```bash
+script -qc 'csh -i init/attest.csh "attest --emit"' /dev/null > flatsat.json
+```
+
+`csh` does NOT support a `-c "..."` flag; the second positional arg to
+`csh -i <init>` is the one-shot command line slash will execute after
+the init script.
+
+**Don't have `csh` installed yet?** `meson test -C build` runs the
+cmocka suite — 13 tests covering emit, sign, verify, diff, the libcsp
+transport, the runtime knobs, and the `attest --help` text. If
+`meson setup` reports `Run-time dependency cmocka found: NO`, install
+`libcmocka-dev` first — without it `meson test` quietly reports "No
+tests defined." and the suite is silently skipped. The tests cover the
+engine; the live integration also depends on a struct-shape match with
+csh's slash ABI (see `vendor/slash/slash/slash.h`), so a working
+`attest --help` against your installed csh is the final sanity check.
 
 (`attest --remote 0` exercises the full CSP transport against the loopback
 interface inside the same csh process — it's the demo path that proves the
@@ -83,7 +111,16 @@ bytes and wraps both into a canonical envelope:
 
 The secret-key file must be exactly 64 raw bytes (libsodium combined
 seed+public format) and `0o600` or stricter — world- or group-readable
-keys are refused with `E202`.
+keys are refused with `E202`. Generate one with `attest --keygen` (below).
+
+### `attest --keygen <prefix>`
+
+Generates a fresh Ed25519 keypair via libsodium and writes
+`<prefix>.pub` (32 bytes, mode `0644`) and `<prefix>.sec` (64 bytes,
+mode `0600`). Refuses to overwrite an existing file (`O_EXCL`) — to
+rotate a mission key, delete or rename the old pair first. Operators
+who manage keys with external tooling (sodium-cli, an HSM) can skip
+this and provide their own files in the same on-disk format.
 
 ### `attest --verify <pubkey-file> <signed.json>`
 
@@ -126,8 +163,9 @@ deferred.
 Prints the inline usage block — subcommand list, the two env-var knobs
 (`ATTEST_CSP_PORT`, `ATTEST_CSP_TIMEOUT_MS`), and the design-doc 0/1/2/3
 exit-code contract. Exit `0`. The text is the same one csh's `help attest`
-shows; `--help` exists so Unix muscle memory works inside `csh -c "..."`
-gates without dropping into an interactive shell.
+shows; `--help` exists so Unix muscle memory works when csh is invoked
+non-interactively (`script -qc 'csh -i init/attest.csh "attest --help"'`)
+without dropping into an interactive shell.
 
 ## Runtime knobs
 
@@ -140,8 +178,13 @@ misconfig is visible.
 
 | Var                      | Default | Range       | Effect                                    |
 |--------------------------|---------|-------------|-------------------------------------------|
-| `ATTEST_CSP_PORT`        | `100`   | `1..127`    | CSP port for `attest --remote` bind/connect |
+| `ATTEST_CSP_PORT`        | `13`    | `1..16`     | CSP port for `attest --remote` bind/connect |
 | `ATTEST_CSP_TIMEOUT_MS`  | `5000`  | `100..60000`| Per-packet read timeout on the ground side  |
+
+The port range mirrors csh's `lib/csp/meson_options.txt`
+(`port_max_bind=16`); ports above 16 silently fail `csp_bind` on the
+bird side. Default `13` sits above the standard CSP service ports
+(0..7) and `PARAM_PORT_SERVER` (10) but inside the bind window.
 
 The bird and the ground process must agree on the port — mismatched
 overrides silently fail to connect (`E101`). `ATTEST_CSP_MAGIC` (the
@@ -174,7 +217,7 @@ column is the shell return value when the command takes the error path.
 CI gates can dispatch on the exit code alone (the message is for humans):
 
 ```bash
-csh -c "attest --verify keys/mission.pub flatsat.signed.json"
+script -qc 'csh -i init/attest.csh "attest --verify keys/mission.pub flatsat.signed.json"' /dev/null
 case $? in
   0) ;;                                    # signature valid
   1) echo "TAMPER DETECTED" >&2; exit 1 ;; # E201 path
@@ -182,15 +225,27 @@ case $? in
 esac
 ```
 
+`script -qc` allocates a PTY for csh's slash readline (csh exits with
+"Failed to init slash" when stdin/stdout aren't a terminal, e.g., in
+most CI runners or under shell pipelines). The exit code propagates
+through `script` unchanged.
+
 ## CI integration
 
-The exit-code contract makes the tool drop-in for shell-driven gates:
+The exit-code contract makes the tool drop-in for shell-driven gates.
+csh's positional-arg form runs ONE slash command per invocation, so the
+ground-side fetch and the diff are two `script -qc` wrappers piping
+through a temp file (csh has no `<(...)` shell process substitution):
 
 ```bash
 # Block a merge if FlatSat drifts from a sealed expected manifest.
 # $BIRD is the CSP node id of the target bird (an integer 0..16383).
-csh -c "attest-diff expected.json <(attest --remote $BIRD)" \
-    || exit 1
+bird=$(mktemp)
+script -qc "csh -i init/attest.csh 'attest --remote $BIRD'" /dev/null > "$bird"
+script -qc "csh -i init/attest.csh 'attest-diff expected.json $bird'" /dev/null
+rc=$?
+rm -f "$bird"
+[ $rc -eq 0 ] || exit 1
 ```
 
 ## Layout

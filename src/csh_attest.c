@@ -32,10 +32,12 @@
 
 #include "csh_attest.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "attest.h"
 #include "diff.h"
@@ -370,6 +372,8 @@ void attest_print_help(FILE *out)
 "verify a signed manifest\n"
 "  attest --remote <node>                   "
 "fetch a manifest from a remote bird (Linux only)\n"
+"  attest --keygen <prefix>                 "
+"write a fresh Ed25519 keypair to <prefix>.pub + <prefix>.sec\n"
 "  attest --help | -h                       "
 "this message\n"
 "  attest-diff [--json] [--no-color] <lhs.json> <rhs.json>\n"
@@ -377,7 +381,7 @@ void attest_print_help(FILE *out)
 "structural diff over two manifests\n"
 "\n"
 "env vars:\n"
-"  ATTEST_CSP_PORT          CSP port for --remote (1..127, default 100)\n"
+"  ATTEST_CSP_PORT          CSP port for --remote (1..16, default 13)\n"
 "  ATTEST_CSP_TIMEOUT_MS    per-packet read timeout "
 "(100..60000 ms, default 5000)\n"
 "\n"
@@ -442,6 +446,78 @@ static int csh_attest_emit_canonical(struct jcs_buffer *buf)
     return attest_emit(&em);
 }
 
+/*
+ * Write `len` bytes to <prefix><suffix> with the given mode. O_EXCL so we
+ * never silently overwrite an existing key (operator must rotate
+ * deliberately). Returns 0 on success, an errno-style code on failure (the
+ * caller renders the user-facing E2xx message).
+ */
+static int write_key_file(const char *prefix, const char *suffix,
+                          mode_t mode, const uint8_t *bytes, size_t len)
+{
+    char path[512];
+    int n = snprintf(path, sizeof(path), "%s%s", prefix, suffix);
+    if (n < 0 || (size_t)n >= sizeof(path)) {
+        return -1;
+    }
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode);
+    if (fd < 0) {
+        return -1;
+    }
+    ssize_t w = write(fd, bytes, len);
+    int rc = (w == (ssize_t)len) ? 0 : -1;
+    if (close(fd) != 0) {
+        rc = -1;
+    }
+    return rc;
+}
+
+/*
+ * Generate a fresh Ed25519 keypair and persist it as <prefix>.pub (mode
+ * 0644) + <prefix>.sec (mode 0600). The 0600 on the secret matches what
+ * --sign demands at load time, so freshly minted keys are immediately
+ * usable without a separate chmod step.
+ *
+ * Refuses to overwrite an existing file (O_EXCL) — operators rotating a
+ * mission key need to delete or rename the old pair first, deliberately.
+ */
+static int attest_keygen_run(const char *prefix, FILE *out, FILE *err)
+{
+    if (attest_sign_init() != ATTEST_SIGN_OK) {
+        fprintf(err, "csh-attest: E205: libsodium init failed\n");
+        return 3;
+    }
+
+    uint8_t pub[ATTEST_SIGN_PUBLIC_KEY_BYTES];
+    uint8_t sec[ATTEST_SIGN_SECRET_KEY_BYTES];
+    if (attest_sign_keypair(pub, sec) != ATTEST_SIGN_OK) {
+        fprintf(err,
+                "csh-attest: E205: libsodium keypair generation failed\n");
+        return 3;
+    }
+
+    if (write_key_file(prefix, ".pub", 0644, pub, sizeof(pub)) != 0) {
+        fprintf(err,
+                "csh-attest: E204: cannot write %s.pub\n"
+                "  cause: file already exists, parent dir missing, or "
+                "permission denied\n"
+                "  fix:   pick an unused prefix, or remove the existing "
+                "%s.pub / %s.sec pair before regenerating\n",
+                prefix, prefix, prefix);
+        return 3;
+    }
+    if (write_key_file(prefix, ".sec", 0600, sec, sizeof(sec)) != 0) {
+        fprintf(err,
+                "csh-attest: E204: cannot write %s.sec (the .pub was "
+                "written; clean up before retrying)\n",
+                prefix);
+        return 3;
+    }
+    fprintf(out, "wrote %s.pub (32B, mode 0644)\n", prefix);
+    fprintf(out, "wrote %s.sec (64B, mode 0600)\n", prefix);
+    return 0;
+}
+
 static int attest_cmd(struct slash *slash)
 {
     bool emit = false;
@@ -449,6 +525,7 @@ static int attest_cmd(struct slash *slash)
     const char *verify_pubkey_path = NULL;
     const char *verify_signed_path = NULL;
     const char *remote_node = NULL;
+    const char *keygen_prefix = NULL;
 
     /*
      * Hand-rolled arg parsing — four subcommand flags, no need for optparse
@@ -489,10 +566,29 @@ static int attest_cmd(struct slash *slash)
                 return SLASH_EUSAGE;
             }
             remote_node = slash->argv[++i];
+        } else if (strcmp(arg, "--keygen") == 0) {
+            if (i + 1 >= slash->argc) {
+                fprintf(stderr,
+                        "csh-attest: --keygen requires a <prefix> "
+                        "(writes <prefix>.pub + <prefix>.sec)\n");
+                return SLASH_EUSAGE;
+            }
+            keygen_prefix = slash->argv[++i];
         } else {
             fprintf(stderr, "csh-attest: unknown argument: %s\n", arg);
             return SLASH_EUSAGE;
         }
+    }
+
+    if (keygen_prefix != NULL) {
+        if (emit || sign_key_path != NULL || verify_pubkey_path != NULL ||
+            remote_node != NULL) {
+            fprintf(stderr,
+                    "csh-attest: --keygen is exclusive with "
+                    "--emit/--sign/--verify/--remote\n");
+            return SLASH_EUSAGE;
+        }
+        return attest_keygen_run(keygen_prefix, stdout, stderr);
     }
 
     if (verify_pubkey_path != NULL) {
@@ -508,8 +604,9 @@ static int attest_cmd(struct slash *slash)
             (char *)verify_signed_path,
         };
         /* Driver returns 0/1/2 shell-style. csh propagates this verbatim
-         * via `csh -c`, so the design-doc 0=valid / 1=invalid / 2=error
-         * contract reaches the caller. */
+         * via the `csh -i <init> "<cmd>"` positional form, so the
+         * design-doc 0=valid / 1=invalid / 2=error contract reaches the
+         * caller (see README "CI integration" for the script -qc wrap). */
         return attest_verify_run(3, vargv, stdout, stderr);
     }
 
@@ -533,8 +630,8 @@ static int attest_cmd(struct slash *slash)
     if (!emit && sign_key_path == NULL) {
         fprintf(stderr,
                 "csh-attest: pass --emit, --sign <keyfile>, "
-                "--verify <pubkey> <signed.json>, "
-                "or --remote <node> (run `attest --help` for details)\n");
+                "--verify <pubkey> <signed.json>, --remote <node>, or "
+                "--keygen <prefix> (run `attest --help` for details)\n");
         return SLASH_EUSAGE;
     }
 
@@ -659,8 +756,9 @@ static int attest_cmd(struct slash *slash)
 }
 slash_command(attest, attest_cmd,
               "--emit | --sign <keyfile> | --verify <pubkey> <signed.json> "
-              "| --remote <node> | --help",
-              "Emit, sign, verify, or fetch a remote attestation manifest");
+              "| --remote <node> | --keygen <prefix> | --help",
+              "Emit, sign, verify, fetch, or generate keys for an attestation "
+              "manifest");
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
 /*

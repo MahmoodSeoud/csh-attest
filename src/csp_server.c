@@ -39,6 +39,7 @@
  */
 static atomic_int server_started;
 
+
 /*
  * Send a 4-byte big-endian length header followed by the manifest body in
  * ATTEST_CSP_MAX_PAYLOAD-sized chunks. Length prefix lets the ground side

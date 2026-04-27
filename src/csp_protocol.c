@@ -50,10 +50,12 @@ static unsigned env_uint_clamp(const char *name, unsigned dfl,
 
 unsigned attest_csp_port(void)
 {
-    /* libcsp's port_max_bind tunable (set in meson.build) caps at 128;
-     * port 0 is the broadcast convention. Allow 1..127. */
+    /* csh's bundled libcsp is compiled with CSP_PORT_MAX_BIND=16 (see
+     * spaceinventor/csh lib/csp/meson_options.txt). Anything above 16
+     * silently fails csp_bind on the bird side. Port 0 is the CSP
+     * broadcast convention, so the usable window is 1..16. */
     return env_uint_clamp("ATTEST_CSP_PORT",
-                          ATTEST_CSP_PORT_DEFAULT, 1u, 127u);
+                          ATTEST_CSP_PORT_DEFAULT, 1u, 16u);
 }
 
 unsigned attest_csp_timeout_ms(void)

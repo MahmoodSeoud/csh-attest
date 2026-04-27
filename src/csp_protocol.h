@@ -4,10 +4,18 @@
  * Wire constants and runtime knobs for `attest --remote` over libcsp.
  *
  * Compile-time defaults:
- *   ATTEST_CSP_PORT_DEFAULT       100      (env: ATTEST_CSP_PORT,
- *                                            range 1..127)
+ *   ATTEST_CSP_PORT_DEFAULT       13       (env: ATTEST_CSP_PORT,
+ *                                            range 1..16)
  *   ATTEST_CSP_TIMEOUT_MS_DEFAULT 5000     (env: ATTEST_CSP_TIMEOUT_MS,
  *                                            range 100..60000)
+ *
+ * Why port 13: csh's bundled libcsp is compiled with
+ * CSP_PORT_MAX_BIND=16 (see csh's lib/csp/meson_options.txt). Earlier
+ * revisions defaulted to 100 — that quietly crashed the bird's listener
+ * on csp_bind because 100 > the build-time port cap. 13 sits above the
+ * standard CSP service ports (0..7) and PARAM_PORT_SERVER but inside the
+ * bind window, so the `attest --remote` loopback demo works against an
+ * unmodified csh out of the box.
  *   ATTEST_CSP_MAGIC              0x41     (protocol-fixed; not overridable)
  *   ATTEST_CSP_MAX_PAYLOAD        1900     (linked to libcsp buffer_size;
  *                                            not overridable)
@@ -34,7 +42,7 @@
  * libdtp in a later session.
  */
 
-#define ATTEST_CSP_PORT_DEFAULT          100u
+#define ATTEST_CSP_PORT_DEFAULT          13u
 #define ATTEST_CSP_MAGIC                 0x41u
 #define ATTEST_CSP_MAX_PAYLOAD           1900u
 #define ATTEST_CSP_TIMEOUT_MS_DEFAULT    5000u

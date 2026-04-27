@@ -51,8 +51,8 @@ static void test_port_default_when_empty(void **state)
 static void test_port_valid_override(void **state)
 {
     (void)state;
-    setenv("ATTEST_CSP_PORT", "37", 1);
-    assert_int_equal(attest_csp_port(), 37u);
+    setenv("ATTEST_CSP_PORT", "9", 1);
+    assert_int_equal(attest_csp_port(), 9u);
 }
 
 static void test_port_boundary_low(void **state)
@@ -65,15 +65,15 @@ static void test_port_boundary_low(void **state)
 static void test_port_boundary_high(void **state)
 {
     (void)state;
-    setenv("ATTEST_CSP_PORT", "127", 1);
-    assert_int_equal(attest_csp_port(), 127u);
+    setenv("ATTEST_CSP_PORT", "16", 1);
+    assert_int_equal(attest_csp_port(), 16u);
 }
 
 static void test_port_zero_falls_back(void **state)
 {
     (void)state;
     /* Port 0 is the broadcast convention in libcsp — explicitly outside
-     * our 1..127 binding range. */
+     * our 1..16 binding range. */
     setenv("ATTEST_CSP_PORT", "0", 1);
     assert_int_equal(attest_csp_port(), ATTEST_CSP_PORT_DEFAULT);
 }
@@ -81,7 +81,9 @@ static void test_port_zero_falls_back(void **state)
 static void test_port_above_range_falls_back(void **state)
 {
     (void)state;
-    setenv("ATTEST_CSP_PORT", "128", 1);
+    /* csh's libcsp ships with CSP_PORT_MAX_BIND=16 — anything higher
+     * silently fails csp_bind, so the env-var clamp must reject it. */
+    setenv("ATTEST_CSP_PORT", "17", 1);
     assert_int_equal(attest_csp_port(), ATTEST_CSP_PORT_DEFAULT);
 }
 

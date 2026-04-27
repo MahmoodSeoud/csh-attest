@@ -15,30 +15,47 @@ project(
         'warning_level=3',
         'werror=true',
         'b_ndebug=if-release',
-        # libcsp tuning. Defaults are tuned for tiny embedded targets — too
-        # small for a 32 KB attestation manifest. Mirrors dipp-apm's pinned
-        # values so the FlatSat ↔ bird ABI stays consistent within the
-        # DISCO-2 mission's CSP fabric.
-        # buffer_size: bytes per CSP packet. 2048 lets a typical manifest
-        #   (~2-4 KB once we drop modules.list lines) fit in 1-2 packets.
-        # use_rdp:     left enabled (libcsp default) so a future minor can
-        #   wire RDP for real-radio retransmit without re-tuning the build.
-        #   v0.1.x's --remote uses plain CSP + a 4-byte length prefix; RDP
-        #   is compiled into libcsp but unused in our protocol path.
-        # have_stdio:  enables csp_print() to actually print, which the
-        #   sample CSP loopback harness uses for setup-time diagnostics.
+        # libcsp tuning. These MUST mirror the csh process the APM dlopens
+        # into. csh links libcsp statically into its executable; at dlopen
+        # time the APM's calls to csp_bind / csp_listen / csp_accept etc.
+        # resolve to csh's symbols, but stack-allocated csp_socket_t /
+        # csp_packet_t structs are sized using OUR libcsp's autoconfig.h.
+        # If the two configs disagree, csh writes past the APM's stack
+        # object and the bird thread silently corrupts itself (the
+        # `attest --remote 0` self-loop times out with E102 because the
+        # bird's accept queue ends up unreachable).
+        #
+        # Values below mirror current spaceinventor/csh
+        # lib/csp/meson_options.txt + the meson_options chosen by csh's
+        # default build (see csh/builddir/lib/csp/include/csp/autoconfig.h
+        # on a stock checkout). If you bump csh, re-diff and bump here.
+        #
+        # Field-by-field rationale:
+        #   buffer_size / packet_padding_bytes — together set sizeof(csp_packet_t).
+        #     csh ships 2048 / 42; mismatching either crashes csp_buffer_get
+        #     and any code that walks an array of packets.
+        #   conn_rxqueue_len — sizeof(csp_socket_t). csh ships 1000; our
+        #     bird allocates `csp_socket_t sock = {0};` on the stack, then
+        #     csh's csp_listen writes 1000 entries into it. Anything <1000
+        #     here silently smashes the bird's stack.
+        #   buffer_count / qfifo_len / conn_max / rdp_max_window — internal
+        #     to libcsp, but mirroring keeps any future struct that
+        #     embeds these constants ABI-clean.
+        #   port_max_bind=16 — caps ATTEST_CSP_PORT at 16. The runtime
+        #     accessor in src/csp_protocol.c clamps to the same range.
         'csp:buffer_size=2048',
-        'csp:buffer_count=15',
+        'csp:packet_padding_bytes=42',
+        'csp:buffer_count=1000',
+        'csp:conn_rxqueue_len=1000',
+        'csp:conn_max=20',
+        'csp:qfifo_len=1000',
+        'csp:rdp_max_window=1000',
+        'csp:port_max_bind=16',
         'csp:use_rdp=true',
+        'csp:use_hmac=true',
+        'csp:use_promisc=true',
+        'csp:use_rtable=true',
         'csp:have_stdio=true',
-        # port_max_bind is the highest CSP port number that can be bound.
-        # libcsp's default of 16 leaves room for the standard service ports
-        # (0-7 reserved for ping/ps/memfree/etc, 8 for CMP) but rejects our
-        # ATTEST_CSP_PORT=100 (per design doc 1H). Bumping to 128 puts our
-        # port well clear of the standard range while staying inside an
-        # 8-bit address space. Memory cost: (128+2) * sizeof(csp_port_t) =
-        # ~2 KB of static storage in libcsp.
-        'csp:port_max_bind=128',
     ],
 )
 
@@ -219,4 +236,17 @@ csh_attest_lib = shared_library(
 cmocka_dep = dependency('cmocka', required: false)
 if cmocka_dep.found()
     subdir('tests')
+else
+    # Tests are optional so that compile-check-only environments (macOS dev
+    # boxes that just want a buildable .so) don't have to install cmocka.
+    # But the README's "tests cover every code path" promise depends on the
+    # suite actually running, so make the miss loud at setup time —
+    # otherwise `meson test -C build` later prints "No tests defined." with
+    # no hint that an install would fix it.
+    warning(
+        'cmocka not found — tests will be SKIPPED. ' +
+        '`meson test -C build` will report "No tests defined." until ' +
+        'libcmocka-dev is installed and `meson setup --reconfigure build` ' +
+        'is run.',
+    )
 endif
