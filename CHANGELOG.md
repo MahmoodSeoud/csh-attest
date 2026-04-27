@@ -4,6 +4,62 @@ All notable changes to csh-attest are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely; the
 schema's own breaking-change policy lives in [SCHEMA.md](./SCHEMA.md).
 
+## 0.3.2 — 2026-04-27
+
+Second DX patch release. Closes the four follow-ups from the boomerang
+`/devex-review` audit on 0.3.1: CSP transport errors get the same Stripe-
+tier three-line treatment the file-IO and crypto sites already have,
+`attest --help` joins the slash surface for `csh -c "..."` muscle memory,
+and the libinfo banner + help block now read the project version from a
+single meson-injected macro instead of two hand-edited string literals.
+No code-path or wire-format changes; safe drop-in upgrade from 0.3.1.
+
+### Added
+
+- `attest --help` (and `-h`) — prints the full subcommand list, the two
+  runtime knobs (`ATTEST_CSP_PORT`, `ATTEST_CSP_TIMEOUT_MS`) with their
+  defaults, and the design-doc 0/1/2/3 exit-code legend. Same text csh's
+  `help attest` shows; the flag exists so `csh -c "attest --help"` works
+  the way Unix muscle memory expects without dropping into an interactive
+  shell. Exits 0.
+- `attest_print_help(FILE *out)` exposed in `src/csh_attest.h`. Lives
+  outside `CSH_ATTEST_HAVE_SLASH` so the cross-platform unit test
+  (`tests/test_help.c`) can drive it on macOS.
+- `tests/test_help.c` — four cmocka cases asserting the help block lists
+  every subcommand verb, both env vars with their defaults, the full
+  exit-code contract (0/1/2/3 + `E101..E105` reference), and the project
+  version. The version assertion is the regression guard for the meson-
+  injected macro: a future refactor that drops the `-D` flag fails this
+  test loudly instead of letting the help banner silently render with an
+  empty version string.
+- README — `### attest --help` subsection under Commands (right after
+  `--remote`) and a new top-level `## Questions` section pointing at the
+  GitHub issue templates, SECURITY.md for sensitive reports, and the
+  upstream csh repo for csh / libcsp routing questions.
+
+### Changed
+
+- `meson.build` injects `-DCSH_ATTEST_VERSION="<project_version>"` as a
+  project argument. `libinfo()` and `attest_print_help()` both read the
+  macro instead of hand-edited literals — releases are now a single
+  `version:` bump in `meson.build` plus `VERSION`. Previously
+  `init/attest.csh` and the libinfo string drifted (see the 0.3.1 audit
+  finding); single source of truth removes the class.
+- E102 (timeout / short read / empty response), E103 (out of CSP
+  buffers), and E104 (malformed length header) in `src/csp_client.c` now
+  print the same `<code+msg>` / `cause:` / `fix:` form the file-IO and
+  crypto sites already use. These are the highest-friction errors during
+  a live FlatSat ↔ bird call — operators see them with cause + actionable
+  fix instead of a one-line shrug. Exit codes and the `Exxx` prefixes
+  are unchanged so existing `strstr(err, "E102")` test assertions and
+  CI dispatch logic keep working.
+- `init/attest.csh` — header comment rewritten. The old "session 1
+  placeholder / session 2 lands the full surface" lines were dev-narrative
+  drift from the early sessions; v0.3.x ships the complete surface and
+  the boot script registers all of it.
+- `slash_command(attest, ...)` help string and the no-args usage hint
+  both reference `--help` so `help attest` discovery surfaces it.
+
 ## 0.3.1 — 2026-04-27
 
 DX patch release. README + error UX hardening surfaced by an end-to-end

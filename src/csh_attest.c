@@ -349,6 +349,48 @@ cleanup:
     return rc;
 }
 
+/*
+ * Render the `attest --help` block. Plain stdio — no slash, no csh, no
+ * libsodium. Lives outside CSH_ATTEST_HAVE_SLASH so it's reachable from
+ * the unit tests on macOS dev builds where the slash surface is gated
+ * off. The text is the source of truth for the human-readable summary;
+ * the README has the long-form reference.
+ */
+void attest_print_help(FILE *out)
+{
+    fprintf(out,
+"attest \xe2\x80\x94 read-only firmware attestation APM (csh-attest %s)\n"
+"\n"
+"usage:\n"
+"  attest --emit                            "
+"emit JCS-canonical manifest to stdout\n"
+"  attest --sign <keyfile>                  "
+"emit signed envelope to stdout\n"
+"  attest --verify <pubkey> <signed.json>   "
+"verify a signed manifest\n"
+"  attest --remote <node>                   "
+"fetch a manifest from a remote bird (Linux only)\n"
+"  attest --help | -h                       "
+"this message\n"
+"  attest-diff [--json] [--no-color] <lhs.json> <rhs.json>\n"
+"                                           "
+"structural diff over two manifests\n"
+"\n"
+"env vars:\n"
+"  ATTEST_CSP_PORT          CSP port for --remote (1..127, default 100)\n"
+"  ATTEST_CSP_TIMEOUT_MS    per-packet read timeout "
+"(100..60000 ms, default 5000)\n"
+"\n"
+"exit codes:\n"
+"  0  success / signature valid / parity\n"
+"  1  drift / signature invalid\n"
+"  2  usage / file / parse error\n"
+"  3  CSP transport error (E101..E105)\n"
+"\n"
+"See README.md \"Error codes\" for the full Exxx reference.\n",
+            CSH_ATTEST_VERSION);
+}
+
 #ifdef CSH_ATTEST_HAVE_SLASH
 #include <slash/slash.h>
 
@@ -420,7 +462,10 @@ static int attest_cmd(struct slash *slash)
      */
     for (int i = 1; i < slash->argc; i++) {
         const char *arg = slash->argv[i];
-        if (strcmp(arg, "--emit") == 0) {
+        if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            attest_print_help(stdout);
+            return SLASH_SUCCESS;
+        } else if (strcmp(arg, "--emit") == 0) {
             emit = true;
         } else if (strcmp(arg, "--sign") == 0) {
             if (i + 1 >= slash->argc) {
@@ -489,7 +534,7 @@ static int attest_cmd(struct slash *slash)
         fprintf(stderr,
                 "csh-attest: pass --emit, --sign <keyfile>, "
                 "--verify <pubkey> <signed.json>, "
-                "or --remote <node>\n");
+                "or --remote <node> (run `attest --help` for details)\n");
         return SLASH_EUSAGE;
     }
 
@@ -614,7 +659,7 @@ static int attest_cmd(struct slash *slash)
 }
 slash_command(attest, attest_cmd,
               "--emit | --sign <keyfile> | --verify <pubkey> <signed.json> "
-              "| --remote <node>",
+              "| --remote <node> | --help",
               "Emit, sign, verify, or fetch a remote attestation manifest");
 #endif /* CSH_ATTEST_HAVE_SLASH */
 
@@ -625,7 +670,7 @@ slash_command(attest, attest_cmd,
 void libinfo(void);
 void libinfo(void)
 {
-    printf("csh-attest 0.3.1 — read-only attestation APM\n");
+    printf("csh-attest %s — read-only attestation APM\n", CSH_ATTEST_VERSION);
 }
 
 /*
