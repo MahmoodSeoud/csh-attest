@@ -410,7 +410,10 @@ slash_command(hello, hello_cmd, "", "csh-attest scaffold liveness check");
  * `attest-diff <lhs.json> <rhs.json> [--json] [--no-color]`. The function
  * body is just a forwarder — attest_diff_run does the real work and is
  * unit-tested directly. csh propagates this return value as the exit
- * code in `csh -c "..."` mode, so the design-doc 0/1/2 contract is met.
+ * code when invoked via `csh -i <init> "<cmd>"` (the only one-shot form
+ * csh supports — it has no `-c` flag), so the design-doc 0/1/2 contract
+ * reaches the caller. See README "CI integration" for the script -qc
+ * wrap that handles the no-TTY case.
  */
 static int attest_diff_cmd(struct slash *slash)
 {

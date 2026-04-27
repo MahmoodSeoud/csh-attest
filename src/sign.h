@@ -85,10 +85,13 @@ int attest_verify_canonical(const uint8_t *bytes, size_t len,
                             const uint8_t *public_key);
 
 /*
- * Test helper: generate an Ed25519 keypair into the caller's buffers. Used
- * by unit tests; not exposed via slash commands. Operators in production
- * use external tooling (sodium-cli, openssl with the right plugin, the
- * ground-side mission key-gen script in scripts/) to provision keys.
+ * Generate an Ed25519 keypair into the caller's buffers. Used by both
+ * unit tests and the `attest --keygen <prefix>` slash command (see
+ * csh_attest.c:attest_keygen_run). Operators in production may also
+ * provision keys with external tooling (sodium-cli, openssl with the
+ * right plugin, an HSM); the on-disk format is the libsodium combined
+ * seed+public 64-byte secret + 32-byte public, so any tool that emits
+ * those is interchangeable with --keygen.
  */
 int attest_sign_keypair(uint8_t *out_public, uint8_t *out_secret);
 

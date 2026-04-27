@@ -14,7 +14,7 @@ body:
     attributes:
       label: csh-attest version
       description: Output of `cat VERSION` or the git SHA you built from.
-      placeholder: 0.3.1 (or 32f7bc2)
+      placeholder: e.g., 0.4.0 (or 32f7bc2)
     validations:
       required: true
 
@@ -22,8 +22,8 @@ body:
     id: csh-version
     attributes:
       label: csh version
-      description: Output of `csh --version` (the spaceinventor binary, not Berkeley).
-      placeholder: spaceinventor/csh @ <sha>
+      description: csh has no `--version` flag — paste the `Compiled: ... git: ...` line that appears in csh's startup banner (run `csh -i /dev/null` and copy it from stderr), or the git SHA from your csh checkout.
+      placeholder: e.g., Compiled Apr 27 2026 git 2.10-34-gb3abbbe
     validations:
       required: true
 
@@ -49,9 +49,9 @@ body:
       description: Exact commands, including environment vars (ATTEST_CSP_PORT, etc.)
       render: bash
       placeholder: |
-        export ATTEST_CSP_PORT=37
+        export ATTEST_CSP_PORT=9
         meson setup build && meson compile -C build
-        csh -c "attest --remote 0"
+        script -qc 'csh -i init/attest.csh "attest --remote 0"' /dev/null
     validations:
       required: true
 

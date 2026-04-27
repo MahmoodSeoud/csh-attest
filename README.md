@@ -12,7 +12,7 @@ diffed. The intended use is **FlatSat ↔ bird parity attestation** — proving
 the ground replica matches the on-orbit asset before an uplink, with a
 deterministic byte-comparable artifact you can commit to a mission repo.
 
-`v0.3.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
+`v0.4.0` ships four data fields (`etc.merkle`, `kernel.build_id`,
 `kernel.uname`, `modules.list`) plus the `schema_version` envelope,
 `attest --remote <node>` for fetching a signed manifest from a remote
 bird over libcsp, env-var-overridable port/timeout knobs (see
@@ -25,7 +25,7 @@ License: Apache-2.0.
 
 ## Prerequisites
 
-You need [`spaceinventor/csh`](https://github.com/spaceinventor/csh) installed and on your `PATH`. **This is NOT the Berkeley C shell** — `csh --version` should mention Space Inventor / `apm load`. If your `csh` is `tcsh` / Berkeley (`/bin/csh` on macOS and many Linux distros), it'll silently swallow `init/attest.csh` and dump you at a useless C-shell prompt. Build spaceinventor/csh from source per its README before continuing.
+You need [`spaceinventor/csh`](https://github.com/spaceinventor/csh) installed and on your `PATH`. **This is NOT the Berkeley C shell** — `csh -h` should print a copyright line that mentions `Space Inventor A/S` (csh has no `--version` flag; the help banner carries the version-ish info). If your `csh` is `tcsh` / Berkeley (`/bin/csh` on macOS and many Linux distros), it'll silently swallow `init/attest.csh` and dump you at a useless C-shell prompt. Build spaceinventor/csh from source per its README before continuing.
 
 Build deps for csh-attest itself: `meson` (≥ 1.0), `ninja`, `libsodium`, `libcmocka`.
 
@@ -73,14 +73,16 @@ script -qc 'csh -i init/attest.csh "attest --emit"' /dev/null > flatsat.json
 the init script.
 
 **Don't have `csh` installed yet?** `meson test -C build` runs the
-cmocka suite — 13 tests covering emit, sign, verify, diff, the libcsp
-transport, the runtime knobs, and the `attest --help` text. If
-`meson setup` reports `Run-time dependency cmocka found: NO`, install
-`libcmocka-dev` first — without it `meson test` quietly reports "No
-tests defined." and the suite is silently skipped. The tests cover the
-engine; the live integration also depends on a struct-shape match with
-csh's slash ABI (see `vendor/slash/slash/slash.h`), so a working
-`attest --help` against your installed csh is the final sanity check.
+cmocka suite — coverage spans emit, sign, verify, diff, the libcsp
+transport, the runtime knobs, and the `attest --help` text. The exact
+test count varies as adapters are added; check `meson test -C build
+--list` for the current set. If `meson setup` ends with a yellow
+`WARNING: cmocka not found — tests will be SKIPPED`, install
+`libcmocka-dev` and re-run `meson setup --reconfigure build` before
+running the test target. The tests cover the engine; the live
+integration also depends on a struct-shape match with csh's slash ABI
+(see `vendor/slash/slash/slash.h`), so a working `attest --help`
+against your installed csh is the final sanity check.
 
 (`attest --remote 0` exercises the full CSP transport against the loopback
 interface inside the same csh process — it's the demo path that proves the

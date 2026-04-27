@@ -25,10 +25,15 @@ meson compile -C build
 meson test -C build --print-errorlogs
 ```
 
-12 cmocka tests should pass on macOS (compile-check target) and Linux
-(production target). All four `attest` commands plus `attest-diff` are
-exercised through their public driver functions; the `attest --remote`
-loopback path is Linux-only.
+The cmocka suite should pass on macOS (compile-check target) and Linux
+(production target); the exact test count varies as adapters are added,
+so use `meson test -C build --list` to see the current set. All five
+`attest` subcommands (`--emit / --sign / --verify / --remote /
+--keygen`) plus `attest-diff` are exercised through their public driver
+functions; the `attest --remote` loopback path is Linux-only. If
+`meson setup` warned that cmocka is missing, install `libcmocka-dev`
+and `meson setup --reconfigure build` before running the tests —
+otherwise `meson test` reports "No tests defined."
 
 ## Pull-request checklist
 

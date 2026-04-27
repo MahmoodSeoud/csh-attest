@@ -4,6 +4,107 @@ All notable changes to csh-attest are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely; the
 schema's own breaking-change policy lives in [SCHEMA.md](./SCHEMA.md).
 
+## 0.4.0 — 2026-04-27
+
+Live-integration release. The cmocka unit suite stayed green through
+0.3.x, but a fresh-clone walk through the README's quickstart on a
+current spaceinventor/csh checkout caught four runtime breakages the
+unit tests couldn't see — the `--remote` self-loop demo, every flag
+parser inside csh, the sign/verify roundtrip, and the test-suite-skipped
+trapdoor. 0.4.0 fixes all four, ships `attest --keygen` so the
+quickstart can run from an empty `keys/` directory, and replaces the
+nonexistent `csh -c` invocations the docs were recommending with the
+`csh -i <init> "<cmd>"` form csh actually supports.
+
+### Added
+
+- `attest --keygen <prefix>` — generates a fresh Ed25519 keypair via
+  libsodium and writes `<prefix>.pub` (32 B, mode 0644) and
+  `<prefix>.sec` (64 B, mode 0600). Refuses to overwrite an existing
+  file (`O_EXCL`); rotate by deleting or renaming the old pair first.
+  Closes the README quickstart loop — `keys/mission.{pub,sec}` are no
+  longer "bring your own", the same shell that runs `attest --emit` can
+  mint them. Operators with external tooling (sodium-cli, an HSM) keep
+  the same on-disk format and remain interchangeable.
+- README "Running non-interactively" section documenting the
+  `script -qc 'csh -i init/attest.csh "..."'` wrap, plus the explicit
+  note that csh has no `-c` flag. Required reading for any CI gate.
+- Loud `WARNING:` from `meson setup` when `libcmocka-dev` isn't
+  installed, pointing at the install + `--reconfigure` step. Was
+  previously a single `Run-time dependency cmocka found: NO` line buried
+  in setup output that left `meson test` reporting "No tests defined."
+  with no hint about why.
+
+### Changed
+
+- **`ATTEST_CSP_PORT` default `100` → `13`, range `1..127` → `1..16`.**
+  csh's bundled libcsp is compiled with `CSP_PORT_MAX_BIND=16` (see
+  spaceinventor/csh `lib/csp/meson_options.txt`); the previous default
+  silently failed `csp_bind` on the bird side and the listener never
+  came up. `13` sits above the standard CSP service ports (0..7) and
+  `PARAM_PORT_SERVER` (10) but inside the bind window. **Migration:**
+  if you set `ATTEST_CSP_PORT` explicitly, drop it to ≤ 16; if you
+  relied on the default, no action needed.
+- `init/attest.csh` now runs `csp init -d 0` before `apm load`. csh
+  boots with `CSP_DEDUP_ALL` (`csp_conf.dedup=3`), and on the loopback
+  path used by `attest --remote 0` that flags the bird's chunked
+  manifest packets as duplicates and silently drops them — the ground
+  side then E102's with `got 0 of N bytes`. Disabling dedup is
+  loopback-only friendly; on a real radio link operators typically want
+  dedup on (`-d 1` or `-d 2`), in which case omit the line and run
+  `--remote` against the real bird's node id where manifest packets
+  don't collide with anything in the dedup window.
+- libcsp subproject build options now mirror csh's defaults exactly
+  (`csp:buffer_size=2048`, `csp:packet_padding_bytes=42`,
+  `csp:conn_rxqueue_len=1000`, `csp:qfifo_len=1000`,
+  `csp:buffer_count=1000`, `csp:conn_max=20`, `csp:rdp_max_window=1000`,
+  `csp:port_max_bind=16`). csh links libcsp statically, but our
+  bird-side `csp_socket_t sock = {0};` is stack-allocated using OUR
+  libcsp's compile-time struct size — so when csh's `csp_listen` writes
+  a 1000-entry RX queue into a 15-entry stack object, the bird's
+  listener silently smashes its own stack and never accepts. Mismatch
+  on `packet_padding_bytes` does the same to `csp_packet_t`. Pin to
+  csh's values; re-diff on every upstream csh bump.
+- `vendor/slash/slash/slash.h` rebuilt to mirror current
+  spaceinventor/csh `lib/slash/include/slash/slash.h` byte-for-byte.
+  Previous shim used a 256-byte placeholder for terminal/line-edit
+  fields, which placed `argv` / `argc` ~36 bytes off from where csh
+  actually puts them — every flag inside `attest_cmd` read garbage and
+  silently dropped. `struct slash_command` was also short by 16 bytes
+  (missing `help` and `context`), so csh's `SLIST_INSERT_HEAD` next-
+  pointer write landed inside the next command struct in the APM's
+  `slash` ELF section, corrupting its `name` and crashing on the next
+  `slash_command_find` iteration. The shim now mirrors `struct slash`
+  (with `int signal; int busy;` after `use_activate`) and
+  `struct slash_command` (with `union { func; func_ctx; }`, `help`, and
+  `context`) exactly. If upstream csh bumps the layout again, update
+  this file and bump `APM_INIT_VERSION` at the same time.
+- `src/jcs_parse.c` top-level `jcsp_parse` now tolerates a trailing
+  RFC 8259 §2 whitespace run (space / tab / LF / CR) after the
+  outermost value. Strict-canonical inside the value tree is unchanged.
+  Reason: `attest --sign > flatsat.signed.json` writes a trailing `\n`
+  via `fputc`, which the strict pre-0.4 parser rejected as "trailing
+  bytes after a valid top-level value" — `attest --verify` then E001'd
+  on its own writer's output. Restricting the relaxation to the
+  outermost run keeps signature comparisons byte-stable while making
+  the quickstart roundtrip work without a pre-strip step.
+- README "CI integration" example no longer uses `csh -c "..."` (csh
+  has no `-c` flag) or `<(...)` (csh has no shell process substitution)
+  — replaced with `script -qc 'csh -i init/attest.csh "..."'` piped
+  through a `mktemp` file. Same for the "Error codes" example.
+- README `csh --version` recommendation → `csh -h` (csh exposes no
+  `--version` flag; the help banner carries the Space Inventor
+  copyright). Same fix in `.github/ISSUE_TEMPLATE/bug_report.yml`,
+  whose `csh-version` field now asks for the `Compiled: ... git: ...`
+  line from csh's startup banner.
+
+### Removed
+
+- Empty `scripts/` directory (was a `.gitkeep` placeholder for an
+  external mission key-gen tool that `attest --keygen` now obviates).
+  `src/sign.h`'s comment pointing operators at "the ground-side mission
+  key-gen script in scripts/" rewritten to point at `--keygen`.
+
 ## 0.3.2 — 2026-04-27
 
 Second DX patch release. Closes the four follow-ups from the boomerang
