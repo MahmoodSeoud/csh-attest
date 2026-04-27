@@ -130,6 +130,7 @@ int attest_adapter_kernel_build_id(struct attest_emitter *em);
 int attest_adapter_kernel_uname(struct attest_emitter *em);
 int attest_adapter_modules_list(struct attest_emitter *em);
 int attest_adapter_etc_merkle(struct attest_emitter *em);
+int attest_adapter_binaries_list(struct attest_emitter *em);
 
 #ifdef __cplusplus
 }

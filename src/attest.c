@@ -22,6 +22,22 @@ static int adapter_schema_version(struct attest_emitter *em);
 
 const attest_field_t attest_fields[] = {
     {
+        /* binaries.list lands BEFORE etc.merkle because at byte index 0
+         * 'b' (0x62) sorts before 'e' (0x65). v0.5.0 — adds attestation
+         * of every ELF in the configured mission allowlist via dual-hash
+         * (NT_GNU_BUILD_ID + SHA-256 content). Empty array if config is
+         * empty (the v0.4.x-compatible default). */
+        .name = "binaries.list",
+        .emit = attest_adapter_binaries_list,
+        /* Worst-case budget: 512 entries × ~150 B/entry (path~80, build_id
+         * 40 hex+quotes, sha256 64 hex+quotes, JSON overhead) ≈ 76 KB.
+         * Comfortably under the SCHEMA.md 200 KB envelope cap with margin
+         * for the rest of the manifest + signing envelope. */
+        .size_budget = 80 * 1024,
+        .required = true,
+        .determinism = DET_STABLE,
+    },
+    {
         .name = "etc.merkle",
         .emit = attest_adapter_etc_merkle,
         .size_budget = 32, /* design doc 1F: 32 B (root only). */

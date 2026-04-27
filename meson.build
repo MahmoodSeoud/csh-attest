@@ -99,13 +99,50 @@ if host_machine.system() == 'darwin'
     )
 endif
 
+#
+# Mission allowlist defaults are baked into the .so via a generated header.
+# The values come from meson options binaries_paths / files_paths (see
+# meson_options.txt). Empty lists ⇒ v0.4.x-compatible default (no userspace
+# attestation; manifest grows three new STABLE fields with empty values
+# plus a stderr WARNING from attest_print_userspace_warning).
+#
+# Per-mission Yocto layers override:
+#   meson setup build -Dbinaries_paths=/usr/bin -Dbinaries_paths=/opt/x
+#
+# Generator emits scripts/gen-config-defaults.py (re-runs whenever the
+# option values change, per ninja's depfile-free dep on the generator).
+python = import('python').find_installation('python3', required: true)
+
+config_defaults_args = [
+    python.full_path(),
+    meson.current_source_dir() / 'scripts' / 'gen-config-defaults.py',
+    '@OUTPUT@',
+    '--binaries-paths',
+] + get_option('binaries_paths') + [
+    '--files-paths',
+] + get_option('files_paths')
+
+config_defaults_h = custom_target(
+    'config_defaults.h',
+    output: 'config_defaults.h',
+    command: config_defaults_args,
+    depend_files: [
+        meson.current_source_dir() / 'scripts' / 'gen-config-defaults.py',
+    ],
+)
+
 csh_attest_sources = [
     'src/csh_attest.c',
     'src/attest.c',
+    'src/adapters/elf_note_walk.c',
+    'src/adapters/elf_walker.c',
     'src/adapters/kernel_build_id.c',
     'src/adapters/kernel_uname.c',
     'src/adapters/modules_list.c',
     'src/adapters/etc_merkle.c',
+    'src/adapters/binaries_list.c',
+    'src/config.c',
+    config_defaults_h,
     'src/diff.c',
     'src/diff_render.c',
     'src/jcs.c',

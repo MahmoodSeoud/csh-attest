@@ -2,21 +2,10 @@
  * kernel.build_id adapter implementation. See kernel_build_id.h for the
  * algorithm + cross-platform contract.
  *
- * ELF note layout (per System V ABI; same on Linux little- and big-endian):
- *
- *     +---------+---------+---------+---------------+---------------+
- *     | namesz  | descsz  |  type   |  name (padded)| desc (padded) |
- *     | uint32  | uint32  | uint32  |  namesz bytes |  descsz bytes |
- *     +---------+---------+---------+---------------+---------------+
- *
- * Both `name` and `desc` are padded up to 4-byte alignment. Endianness is
- * the host's — the kernel exposes its own image's notes verbatim, and the
- * userspace tool reading /sys/kernel/notes is by definition the same
- * endianness as the kernel.
- *
- * NT_GNU_BUILD_ID = 3 (per linux/elf-em.h, glibc <elf.h>). We hard-code
- * the value rather than #include <elf.h> — that header isn't portable to
- * the macOS dev compile-check target.
+ * The note-walking is delegated to elf_note_walk.c — the same parser
+ * also drives binaries.list (where it walks PT_NOTE segments of userspace
+ * ELFs). /sys/kernel/notes is already the .notes section verbatim, so
+ * this adapter is just a thin file-slurp + walker wrapper.
  */
 
 #include "kernel_build_id.h"
@@ -26,48 +15,20 @@
 #include <string.h>
 
 #include "attest.h"
+#include "elf_note_walk.h"
 
-#define NT_GNU_BUILD_ID_VALUE 3u
-
-/* Round up to next multiple of 4 — ELF note name/desc padding. */
-static size_t pad4(size_t n)
-{
-    return (n + 3u) & ~(size_t)3u;
-}
+/*
+ * Compile-time check: kernel_build_id.h's local constant must match the
+ * shared elf_note_walk.h cap. If they ever drift, the build catches it
+ * before kernel manifests start silently truncating SHA-256 build-ids.
+ */
+_Static_assert(KERNEL_BUILD_ID_MAX_BYTES == ELF_BUILD_ID_MAX_BYTES,
+               "kernel and userspace build-id caps must match");
 
 int kernel_build_id_extract(const uint8_t *bytes, size_t len,
                             uint8_t *out, size_t *out_len)
 {
-    size_t pos = 0;
-    while (pos + 12u <= len) {
-        uint32_t namesz, descsz, type;
-        memcpy(&namesz, bytes + pos + 0, sizeof(namesz));
-        memcpy(&descsz, bytes + pos + 4, sizeof(descsz));
-        memcpy(&type,   bytes + pos + 8, sizeof(type));
-
-        size_t name_off = pos + 12u;
-        size_t desc_off = name_off + pad4(namesz);
-        size_t next     = desc_off + pad4(descsz);
-
-        /* Reject overflow / truncation. Each cast catches the additive
-         * overflow path; the final bound check catches a note that claims
-         * to extend past the end of the buffer. */
-        if (desc_off < name_off || next < desc_off || next > len) {
-            return -1;
-        }
-
-        if (type == NT_GNU_BUILD_ID_VALUE && namesz == 4u &&
-            memcmp(bytes + name_off, "GNU\0", 4) == 0) {
-            if (descsz == 0 || descsz > KERNEL_BUILD_ID_MAX_BYTES) {
-                return -1;
-            }
-            memcpy(out, bytes + desc_off, descsz);
-            *out_len = descsz;
-            return 0;
-        }
-        pos = next;
-    }
-    return -2;
+    return elf_note_walk_find_buildid(bytes, len, out, out_len);
 }
 
 /*

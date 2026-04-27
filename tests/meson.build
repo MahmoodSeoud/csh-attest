@@ -5,10 +5,15 @@
 csh_attest_test_sources = [
     '../src/csh_attest.c',
     '../src/attest.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
     '../src/adapters/kernel_build_id.c',
     '../src/adapters/kernel_uname.c',
     '../src/adapters/modules_list.c',
     '../src/adapters/etc_merkle.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
     '../src/diff.c',
     '../src/diff_render.c',
     '../src/jcs.c',
@@ -47,10 +52,15 @@ test_engine = executable(
     'test_engine',
     'test_engine.c',
     '../src/attest.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
     '../src/adapters/kernel_build_id.c',
     '../src/adapters/kernel_uname.c',
     '../src/adapters/modules_list.c',
     '../src/adapters/etc_merkle.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
     '../src/jcs.c',
     include_directories: csh_attest_inc,
     dependencies: [cmocka_dep, sodium_dep],
@@ -64,10 +74,15 @@ test_jcs = executable(
     'test_jcs.c',
     '../src/jcs.c',
     '../src/attest.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
     '../src/adapters/kernel_build_id.c',
     '../src/adapters/kernel_uname.c',
     '../src/adapters/modules_list.c',
     '../src/adapters/etc_merkle.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
     include_directories: csh_attest_inc,
     dependencies: [cmocka_dep, sodium_dep],
     install: false,
@@ -81,10 +96,15 @@ test_jcs_parse = executable(
     '../src/jcs.c',
     '../src/jcs_parse.c',
     '../src/attest.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
     '../src/adapters/kernel_build_id.c',
     '../src/adapters/kernel_uname.c',
     '../src/adapters/modules_list.c',
     '../src/adapters/etc_merkle.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
     include_directories: csh_attest_inc,
     dependencies: [cmocka_dep, sodium_dep],
     install: false,
@@ -106,6 +126,7 @@ test('diff', test_diff)
 test_kernel_build_id = executable(
     'test_kernel_build_id',
     'test_kernel_build_id.c',
+    '../src/adapters/elf_note_walk.c',
     '../src/adapters/kernel_build_id.c',
     include_directories: csh_attest_inc,
     dependencies: [cmocka_dep],
@@ -113,6 +134,45 @@ test_kernel_build_id = executable(
 )
 
 test('kernel_build_id', test_kernel_build_id)
+
+test_elf_walker = executable(
+    'test_elf_walker',
+    'test_elf_walker.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
+    include_directories: csh_attest_inc,
+    dependencies: [cmocka_dep],
+    install: false,
+)
+
+test('elf_walker', test_elf_walker)
+
+test_config = executable(
+    'test_config',
+    'test_config.c',
+    '../src/config.c',
+    config_defaults_h,
+    include_directories: csh_attest_inc,
+    dependencies: [cmocka_dep],
+    install: false,
+)
+
+test('config', test_config)
+
+test_binaries_list = executable(
+    'test_binaries_list',
+    'test_binaries_list.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
+    include_directories: csh_attest_inc,
+    dependencies: [cmocka_dep, sodium_dep],
+    install: false,
+)
+
+test('binaries_list', test_binaries_list)
 
 test_modules_list = executable(
     'test_modules_list',
@@ -146,10 +206,15 @@ test_jcs_vectors = executable(
     '../src/jcs.c',
     '../src/jcs_parse.c',
     '../src/attest.c',
+    '../src/adapters/elf_note_walk.c',
+    '../src/adapters/elf_walker.c',
     '../src/adapters/kernel_build_id.c',
     '../src/adapters/kernel_uname.c',
     '../src/adapters/modules_list.c',
     '../src/adapters/etc_merkle.c',
+    '../src/adapters/binaries_list.c',
+    '../src/config.c',
+    config_defaults_h,
     include_directories: csh_attest_inc,
     dependencies: [cmocka_dep, sodium_dep],
     c_args: ['-DJCS_VECTORS_DIR="' + meson.current_source_dir() + '/jcs/vectors"'],
