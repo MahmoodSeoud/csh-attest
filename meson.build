@@ -1,7 +1,7 @@
 project(
     'csh-attest',
     'c',
-    version: '0.3.1',
+    version: '0.3.2',
     license: 'Apache-2.0',
     default_options: [
         # gnu11 (NOT c11) so the `endian.h` GNU extensions
@@ -52,6 +52,15 @@ add_project_arguments(
         '-Wpointer-arith',
         '-Wshadow',
     ],
+    language: 'c',
+)
+
+# Inject the project version as a string macro so the libinfo banner and the
+# `attest --help` block stay in lock-step with `version:` above. Hand-bumping
+# both was the failure mode the 0.3.1 audit caught in init/attest.csh — single
+# source of truth removes the class.
+add_project_arguments(
+    '-DCSH_ATTEST_VERSION="' + meson.project_version() + '"',
     language: 'c',
 )
 

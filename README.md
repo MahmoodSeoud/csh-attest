@@ -52,7 +52,7 @@ csh> attest --remote 0                              > bird.json   # self-loop de
 csh> attest-diff flatsat.json bird.json
 ```
 
-**Don't have `csh` installed yet?** `meson test -C build` runs the cmocka suite — 12 tests covering emit, sign, verify, diff, the libcsp transport, and the runtime knobs. If they all pass, every code path is functional; you just need spaceinventor/csh installed before you can drive them interactively.
+**Don't have `csh` installed yet?** `meson test -C build` runs the cmocka suite — 13 tests covering emit, sign, verify, diff, the libcsp transport, the runtime knobs, and the `attest --help` text. If they all pass, every code path is functional; you just need spaceinventor/csh installed before you can drive them interactively.
 
 (`attest --remote 0` exercises the full CSP transport against the loopback
 interface inside the same csh process — it's the demo path that proves the
@@ -120,6 +120,14 @@ ground side connects on the same port, the bird walks its introspection
 table, and the canonical manifest streams back length-prefixed.
 Single-pass operation for now — pass-boundary resume via libdtp is
 deferred.
+
+### `attest --help` / `-h`
+
+Prints the inline usage block — subcommand list, the two env-var knobs
+(`ATTEST_CSP_PORT`, `ATTEST_CSP_TIMEOUT_MS`), and the design-doc 0/1/2/3
+exit-code contract. Exit `0`. The text is the same one csh's `help attest`
+shows; `--help` exists so Unix muscle memory works inside `csh -c "..."`
+gates without dropping into an interactive shell.
 
 ## Runtime knobs
 
@@ -218,3 +226,24 @@ This is early-stage software. The schema is `v0.1.x` (additive minor bumps
 only); a `v1.0` freeze waits on ≥3 ecosystem reviewers signing off. See
 [SCHEMA.md](./SCHEMA.md) for the policy. Open an issue before sending a PR
 for anything that touches the manifest shape or canonicalization.
+
+[CONTRIBUTING.md](./CONTRIBUTING.md) has the full PR checklist; new bugs
+go through `.github/ISSUE_TEMPLATE/bug_report.yml` (the version + csh
+version + target OS fields cut triage time roughly in half).
+
+## Questions
+
+For usage questions, design discussion, or "is this the right tool for
+my mission?" — open a [GitHub issue](https://github.com/MahmoodSeoud/csh-attest/issues/new/choose)
+using the **Feature request** template (it has a free-form motivation
+field) or comment on an existing one. There is no Discord or mailing
+list yet; the volume doesn't warrant one and a public issue thread is
+better archived than a chat scrollback.
+
+For **security-sensitive** reports — sig-validation bypasses, key-handling
+flaws, anything that touches the integrity contract — see
+[SECURITY.md](./SECURITY.md). Do not file those as public issues.
+
+For questions about csh itself, libcsp routing, or the `apm load`
+mechanism: those belong upstream at
+[spaceinventor/csh](https://github.com/spaceinventor/csh).

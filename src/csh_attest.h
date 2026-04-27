@@ -60,6 +60,15 @@ int attest_diff_run(int argc, char **argv, FILE *out, FILE *err);
  */
 int attest_verify_run(int argc, char **argv, FILE *out, FILE *err);
 
+/*
+ * Render the `attest --help` block. Lists the four subcommands, the env
+ * vars (ATTEST_CSP_PORT / ATTEST_CSP_TIMEOUT_MS), and the design-doc exit
+ * codes (0/1/2/3). Used by the slash dispatch's `--help` / `-h` branch
+ * and by tests/test_help.c. Always writes to `out`; never returns an
+ * error.
+ */
+void attest_print_help(FILE *out);
+
 #ifdef __cplusplus
 }
 #endif

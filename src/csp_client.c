@@ -102,7 +102,12 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
     /* Send the trigger byte. csp_send transfers packet ownership. */
     csp_packet_t *trigger = csp_buffer_get(0);
     if (trigger == NULL) {
-        fprintf(err, "csh-attest: E103: out of CSP buffers\n");
+        fprintf(err,
+                "csh-attest: E103: out of CSP buffers (no packet for trigger)\n"
+                "  cause: libcsp's packet pool is exhausted — another caller "
+                "is holding all buffers, or buffer_count is sized too small\n"
+                "  fix:   raise csp:buffer_count in meson_options.txt (default "
+                "8); on the bird, check `csp ps` for stuck connections\n");
         csp_close(conn);
         return 3;
     }
@@ -120,14 +125,26 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
     if (header == NULL) {
         fprintf(err,
                 "csh-attest: E102: timed out waiting for length header from "
-                "node %u\n", node);
+                "node %u (after %u ms)\n"
+                "  cause: bird's csh-attest APM is not running, the bird "
+                "process is wedged, or the link dropped mid-handshake\n"
+                "  fix:   raise ATTEST_CSP_TIMEOUT_MS (default 5000) for slow "
+                "links; on the bird, confirm the APM is loaded with `apm info` "
+                "and that ATTEST_CSP_PORT matches the ground side\n",
+                node, timeout_ms);
         csp_close(conn);
         return 3;
     }
     if (header->length != ATTEST_CSP_LEN_PREFIX) {
         fprintf(err,
                 "csh-attest: E104: malformed length header (got %u bytes, "
-                "expected %u)\n",
+                "expected %u)\n"
+                "  cause: bird is speaking a different wire protocol — likely "
+                "a csh-attest version mismatch, or libcsp framing corruption "
+                "on a noisy link\n"
+                "  fix:   confirm the bird and ground are running matching "
+                "csh-attest versions (`apm info` on the bird, `cat VERSION` "
+                "on the ground); rerun if the link is intermittent\n",
                 header->length, ATTEST_CSP_LEN_PREFIX);
         csp_buffer_free(header);
         csp_close(conn);
@@ -147,8 +164,14 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
         if (p == NULL) {
             fprintf(err,
                     "csh-attest: E102: short read from node %u "
-                    "(got %zu of %zu bytes)\n",
-                    node, len, expected);
+                    "(got %zu of %zu bytes, %u ms per-packet timeout)\n"
+                    "  cause: bird stopped sending mid-stream — process "
+                    "crashed, link dropped, or libcsp buffer exhaustion on "
+                    "the bird side\n"
+                    "  fix:   rerun (the protocol is single-shot, no resume "
+                    "yet); raise ATTEST_CSP_TIMEOUT_MS for slow links; check "
+                    "the bird's stderr / dmesg for an APM crash\n",
+                    node, len, expected, timeout_ms);
             free(buf);
             csp_close(conn);
             return 3;
@@ -166,7 +189,15 @@ int attest_remote_run(int argc, char **argv, FILE *out, FILE *err)
 
     if (len == 0) {
         fprintf(err,
-                "csh-attest: E102: empty response from node %u\n", node);
+                "csh-attest: E102: empty response from node %u "
+                "(bird advertised 0-byte payload)\n"
+                "  cause: bird-side emit/sign failed before any manifest "
+                "bytes were produced — likely a missing key file or a "
+                "broken introspection adapter on the bird\n"
+                "  fix:   on the bird, run `attest --emit` locally to "
+                "reproduce; check the bird's stderr for the underlying "
+                "Exxx code; verify the signing key path is configured\n",
+                node);
         free(buf);
         return 3;
     }

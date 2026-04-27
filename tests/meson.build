@@ -183,6 +183,22 @@ test_csp_knobs = executable(
 
 test('csp_knobs', test_csp_knobs)
 
+# attest_print_help renders the user-facing help block. The helper lives
+# outside CSH_ATTEST_HAVE_SLASH and has no libsodium / libcsp deps, so it
+# links against only the help-bearing TU (csh_attest.c) plus its transitive
+# stdio. Cross-platform — runs on macOS dev builds. Keeps `attest --help`
+# in lock-step with the README "Error codes" + "Runtime knobs" tables.
+test_help = executable(
+    'test_help',
+    'test_help.c',
+    csh_attest_test_sources,
+    include_directories: [csh_attest_inc, slash_inc],
+    dependencies: csh_attest_test_deps,
+    install: false,
+)
+
+test('help', test_help)
+
 # Exercises the attest_verify_run driver end-to-end: builds a real signed
 # envelope through the canonical emitter, writes it + a pubkey to disk,
 # drives the run function with synthetic argvs, asserts on exit codes +
